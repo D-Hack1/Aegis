@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+.venv/
+env/
+.env
+*.env
+
+# ML artifacts
+ml/model.joblib
+ml/optuna_study.pkl
+ml/confusion_matrix.png
+ml/classification_report.txt
+
+# Data (large files — store elsewhere)
+data/raw/
+data/features/
+data/labels/
+
+# Zeek logs
+zeek/logs/
+
+# Kafka / Zookeeper local data
+kafka-data/
+zookeeper-data/
+
+# Elasticsearch local data
+es-data/
+
+# Node / React
+node_modules/
+dashboard/dist/
+dashboard/.vite/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
