@@ -1,14 +1,3 @@
-"""
-features/schema.py
-------------------
-Single source of truth for the feature row schema used across the entire pipeline.
-
-Everyone imports from here. No one hardcodes column names anywhere else.
-
-Usage:
-    from features.schema import FeatureRow, FEATURE_COLUMNS, to_dict, from_dict
-"""
-
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 import json
