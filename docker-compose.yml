@@ -1,0 +1,123 @@
+networks:
+  labnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.0.0/24
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+
+services:
+  attacker:
+    build:
+      context: ./attacker
+    container_name: attacker
+    networks:
+      labnet:
+        ipv4_address: 10.10.0.2
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./attacker/scripts:/scripts
+      - ./data/raw:/pcaps
+    stdin_open: true
+    tty: true
+
+  victim:
+    build:
+      context: ./victim
+    container_name: victim
+    networks:
+      labnet:
+        ipv4_address: 10.10.0.3
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./data/raw:/pcaps
+
+  benign:
+    build:
+      context: ./benign
+    container_name: benign
+    networks:
+      labnet:
+        ipv4_address: 10.10.0.4
+    volumes:
+      - ./benign/scripts:/scripts
+
+  zeek:
+    image: zeek/zeek:6.0.3
+    container_name: zeek
+    networks:
+      labnet:
+        ipv4_address: 10.10.0.5
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./zeek/scripts:/usr/local/zeek/share/zeek/site
+      - ./zeek/logs:/zeek/logs
+    command: tail -f /dev/null
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: zookeeper
+    networks:
+      labnet:
+        ipv4_address: 10.10.0.7
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka
+    networks:
+      labnet:
+        ipv4_address: 10.10.0.6
+    depends_on:
+      - zookeeper
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka-init
+    networks:
+      labnet:
+        ipv4_address: 10.10.0.9
+    depends_on:
+      - kafka
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic raw-features --partitions 1 --replication-factor 1 --config retention.ms=21600000
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic inference-results --partitions 1 --replication-factor 1 --config retention.ms=21600000
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic alerts --partitions 1 --replication-factor 1 --config retention.ms=21600000
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic pipeline-metrics --partitions 1 --replication-factor 1 --config retention.ms=21600000
+      "
+
+  elasticsearch:
+    image: elasticsearch:8.13.0
+    container_name: elasticsearch
+    networks:
+      labnet:
+        ipv4_address: 10.10.0.8
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+
