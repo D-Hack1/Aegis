@@ -575,8 +575,9 @@ def enrich_conn_features(conn_features, dns_features=None, tls_features=None, qu
     return enriched
 
 
+# Durable event schema: raw JA4 is retained; model-only encoded columns are excluded.
 SCHEMA_COLUMNS = tuple(FeatureRow.__dataclass_fields__)
-SCHEMA_DEFAULTS = {**ENRICHMENT_DEFAULTS, "cipher_suite_enc": 0, "ja4_hash_enc": 0, "label": None}
+SCHEMA_DEFAULTS = {**ENRICHMENT_DEFAULTS, "cipher_suite_enc": 0, "label": None}
 STRING_SCHEMA_FIELDS = {"flow_id", "src_ip", "dst_ip", "protocol", "ja3_hash", "ja3s_hash", "ja4_hash"}
 INT_SCHEMA_FIELDS = {
     "src_port",
@@ -601,7 +602,7 @@ def _required_schema_value(record, field):
 
 
 def apply_categorical_encoders(feature_rows, ja4_mapping=None, cipher_mapping=None):
-    """Apply persisted training-time mappings without fitting from the current batch."""
+    """Apply caller-supplied training-time mappings without fitting the current batch."""
     encoded = feature_rows.copy()
     for raw_column, encoded_column, mapping in (
         ("ja4_hash", "ja4_hash_enc", ja4_mapping),
@@ -619,13 +620,10 @@ def apply_categorical_encoders(feature_rows, ja4_mapping=None, cipher_mapping=No
     return encoded
 
 
-def normalize_to_schema(enriched_features, ja4_mapping=None, cipher_mapping=None):
-    """Construct raw FeatureRow-compatible rows using optional persisted encoders."""
+def normalize_to_schema(enriched_features):
+    """Construct durable raw FeatureRow rows without model-specific encoding."""
     if "uid" not in enriched_features.columns:
         raise ValueError("feature rows are missing uid")
-    enriched_features = apply_categorical_encoders(
-        enriched_features, ja4_mapping=ja4_mapping, cipher_mapping=cipher_mapping
-    )
     rows = []
     for record in enriched_features.to_dict("records"):
         uid = _text(record.get("uid"))
@@ -663,7 +661,7 @@ def normalize_to_schema(enriched_features, ja4_mapping=None, cipher_mapping=None
 
 
 def prepare_model_input(feature_rows, ja4_mapping=None, cipher_mapping=None):
-    """Build model columns with persisted mappings; absent mappings encode categories as 0 only."""
+    """Build FEATURE_COLUMNS from raw durable rows and persisted mappings only."""
     encoded = apply_categorical_encoders(
         feature_rows, ja4_mapping=ja4_mapping, cipher_mapping=cipher_mapping
     )
@@ -683,6 +681,7 @@ def prepare_model_input(feature_rows, ja4_mapping=None, cipher_mapping=None):
 
 
 def write_parquet(feature_rows, scenario_name, output_dir="data/features"):
+    """Persist the raw durable schema, excluding model-only encoded columns."""
     if not _text(scenario_name):
         raise ValueError("--scenario-name must not be empty when writing Parquet")
     output_path = Path(output_dir) / f"{scenario_name}.parquet"
