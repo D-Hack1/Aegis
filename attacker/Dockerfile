@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3\
     python3-scapy\
     iodine\
+    net-tools\
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /scripts
