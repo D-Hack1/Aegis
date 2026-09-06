@@ -126,7 +126,7 @@ FEATURE_COLUMNS: list[str] = [
     "is_tls",
 
     # JA4
-    # ja4_hash is frequency-encoded into ja4_hash_enc by the feature pipeline
+    # Raw ja4_hash is encoded during model preprocessing with a persisted mapping.
     "ja4_hash_enc",
 
     # QUIC
@@ -155,7 +155,7 @@ ID_COLUMNS: list[str] = [
 
 # String/hash columns that need encoding before model input
 ENCODE_COLUMNS: list[str] = [
-    "ja4_hash",   # → ja4_hash_enc  (frequency encoding, top-50, rest=0)
+    "ja4_hash",   # Durable raw value → ja4_hash_enc during model preprocessing
 ]
 
 # Boolean columns — ensure these are cast to int (0/1) before model input
