@@ -54,3 +54,8 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Custom docs
+API_CONTRACT.md
+Jaith_Frontend_Tasks.md
+cookbook/
