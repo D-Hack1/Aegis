@@ -345,6 +345,10 @@ def _dns_window_features(conn_features, dns_events):
     if dns_events.empty:
         return pd.DataFrame(columns=DNS_FEATURE_COLUMNS)
 
+    events_by_uid = {
+        uid: group.to_dict("records")
+        for uid, group in dns_events.groupby("uid", sort=False)
+    }
     events_by_source = {
         source_ip: group.to_dict("records")
         for source_ip, group in dns_events.groupby("src_ip", sort=False)
@@ -352,11 +356,17 @@ def _dns_window_features(conn_features, dns_events):
     rows = []
     for flow in conn_features.to_dict("records"):
         timestamp = flow["ts"]
-        events = [
-            event
-            for event in events_by_source.get(flow["src_ip"], [])
-            if 0.0 <= timestamp - event["ts"] <= WINDOW_SECONDS
-        ]
+        uid = _text(flow["uid"])
+        same_uid_events = events_by_uid.get(uid, []) if uid else []
+        if any(event["query"] for event in same_uid_events):
+            # A Zeek UID identifies the connection directly, including DNS events after flow start.
+            events = same_uid_events
+        else:
+            events = [
+                event
+                for event in events_by_source.get(flow["src_ip"], [])
+                if 0.0 <= timestamp - event["ts"] <= WINDOW_SECONDS
+            ]
         queries = [event["query"] for event in events if event["query"]]
         lengths = [len(query) for query in queries]
         fractions = dns_record_type_fractions(event["qtype"] for event in events)
