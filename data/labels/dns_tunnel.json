@@ -1,0 +1,8 @@
+{
+  "scenario":    "dns_tunnel",
+  "attack_class": "dns_anomaly",
+  "src_ip":      "10.10.0.2",
+  "dst_ip":      "10.10.0.3",
+  "description": "DNS tunnelling: data exfiltration encoded into DNS query subdomains and TXT record responses, bypassing traditional firewall inspection.",
+  "pcap":        "data/raw/dns_tunnel.pcap"
+}

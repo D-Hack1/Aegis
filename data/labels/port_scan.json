@@ -1,0 +1,8 @@
+{
+  "scenario":    "port_scan",
+  "attack_class": "port_scan",
+  "src_ip":      "10.10.0.2",
+  "dst_ip":      "10.10.0.3",
+  "description": "Sequential TCP SYN port scan across ports 1-1024. Single source probing many destination ports to discover open services.",
+  "pcap":        "data/raw/port_scan.pcap"
+}

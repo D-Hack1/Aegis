@@ -1,0 +1,8 @@
+{
+  "scenario":    "dga",
+  "attack_class": "dns_anomaly",
+  "src_ip":      "10.10.0.2",
+  "dst_ip":      "10.10.0.3",
+  "description": "Domain Generation Algorithm simulation: rapid DNS queries for high-entropy, algorithmically generated domain names that do not resolve.",
+  "pcap":        "data/raw/dga.pcap"
+}

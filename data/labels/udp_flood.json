@@ -1,0 +1,8 @@
+{
+  "scenario":    "udp_flood",
+  "attack_class": "ddos",
+  "src_ip":      "10.10.0.2",
+  "dst_ip":      "10.10.0.3",
+  "description": "UDP flood with spoofed source IPs and large payloads. Volumetric attack targeting ports 53 and 80 to saturate bandwidth.",
+  "pcap":        "data/raw/udp_flood.pcap"
+}

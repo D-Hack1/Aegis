@@ -1,0 +1,8 @@
+{
+  "scenario":    "syn_flood",
+  "attack_class": "ddos",
+  "src_ip":      "10.10.0.2",
+  "dst_ip":      "10.10.0.3",
+  "description": "TCP SYN flood with spoofed source IPs. Attacker sends SYN packets at high rate without completing handshakes, exhausting victim connection table.",
+  "pcap":        "data/raw/syn_flood.pcap"
+}

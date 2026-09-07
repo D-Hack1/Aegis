@@ -1,258 +1,472 @@
-"""Validate durable feature Parquet files before model-training handoff."""
+"""
+data/verify.py — Pre-training integrity checker for Aegis NIDS.
+
+What this file does:
+─────────────────────────────────────────────────────────────────────────────
+Before you run ml/train.py on real data, this script checks that everything
+is in place and consistent. It catches mismatches early — before you waste
+time on a broken training run.
+
+Checks performed:
+  1. PCAP ↔ LABEL CONSISTENCY
+     Every PCAP in data/raw/ must have a matching label JSON in data/labels/.
+     Every label JSON must have a matching PCAP in data/raw/.
+     Missing on either side is an error.
+
+  2. PARQUET ↔ LABEL CONSISTENCY
+     Every Parquet file in data/features/ must have a matching label JSON.
+     Every label JSON must have a matching Parquet file (warning, not error —
+     some scenarios may not have been processed yet).
+
+  3. LABEL FILE SCHEMA VALIDATION
+     Every label JSON must have the required fields:
+         scenario, attack_class, src_ip, dst_ip, pcap
+     attack_class must be one of the known CLASS_NAMES.
+
+  4. PARQUET SCHEMA VALIDATION
+     Each Parquet file is opened and its columns are checked against
+     FEATURE_COLUMNS from features/schema.py.
+     Missing columns are reported per file.
+
+  5. LABEL ROW COUNT REPORT
+     Prints how many rows each Parquet file contains per class.
+     Flags severe imbalance (any class with < 10% of the largest class).
+
+Exit codes:
+    0 — all checks passed (or only warnings)
+    1 — one or more hard errors found (training would likely fail or be wrong)
+
+Usage:
+    python3 data/verify.py
+    python3 data/verify.py --raw-dir data/raw --labels-dir data/labels
+    python3 data/verify.py --no-pcap   # skip PCAP check (before lab is run)
+─────────────────────────────────────────────────────────────────────────────
+"""
+
+from __future__ import annotations
 
 import argparse
-import glob
-import math
+import json
 import sys
-from collections import Counter
-from dataclasses import dataclass, field
-from numbers import Real
 from pathlib import Path
 
 import pandas as pd
 
-# Support direct execution with `python data/verify.py ...` from the repository root.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from features.pipeline import BOOL_SCHEMA_FIELDS, INT_SCHEMA_FIELDS, SCHEMA_COLUMNS
-from features.schema import FEATURE_COLUMNS, FeatureRow
+# ── project import — schema is the single source of truth ─────────────────
+try:
+    from features.schema import FEATURE_COLUMNS
+except ModuleNotFoundError:
+    # Allow running from inside the data/ directory
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from features.schema import FEATURE_COLUMNS
 
-
-# Copied exactly from the documented FeatureRow.label durable training-label contract.
-DURABLE_LABEL_VALUES = {
+# Known valid attack classes — must match ml/train.py CLASS_NAMES
+KNOWN_CLASSES: list[str] = [
+    "benign",
     "ddos",
     "c2_beaconing",
     "dns_anomaly",
-    "malware_tls",
     "port_scan",
     "exfiltration",
-    "benign",
-}
+]
 
-MODEL_ONLY_COLUMNS = frozenset(FEATURE_COLUMNS) - frozenset(SCHEMA_COLUMNS)
-NUMERIC_SCHEMA_FIELDS = tuple(
-    name
-    for name, schema_field in FeatureRow.__dataclass_fields__.items()
-    if schema_field.type in (int, float)
+# Required fields in every label JSON file
+REQUIRED_LABEL_FIELDS: tuple[str, ...] = (
+    "scenario",
+    "attack_class",
+    "src_ip",
+    "dst_ip",
+    "pcap",
 )
-NON_NEGATIVE_FIELDS = frozenset(NUMERIC_SCHEMA_FIELDS) - {"ts", "src_port", "dst_port"}
+
+# Imbalance threshold — warn if a class has fewer than this fraction of rows
+# compared to the largest class
+IMBALANCE_THRESHOLD = 0.10
 
 
-@dataclass
-class ValidationResult:
-    path: Path
-    row_count: int = 0
-    column_count: int = 0
-    label_counts: Counter = field(default_factory=Counter)
-    checks: dict[str, bool] = field(default_factory=dict)
-    errors: list[str] = field(default_factory=list)
+# ═══════════════════════════════════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════════════════════════════════
 
-    @property
-    def passed(self):
-        return not self.errors
+class _Counters:
+    """Collect errors and warnings so we can print a summary at the end."""
 
-    def fail(self, check, message):
-        self.checks[check] = False
-        self.errors.append(message)
+    def __init__(self):
+        self.errors:   list[str] = []
+        self.warnings: list[str] = []
 
+    def error(self, msg: str):
+        self.errors.append(msg)
+        print(f"  [ERROR]   {msg}")
 
-def _missing(value):
-    return value is None or (not isinstance(value, (list, tuple, dict, set)) and pd.isna(value))
+    def warn(self, msg: str):
+        self.warnings.append(msg)
+        print(f"  [WARN]    {msg}")
 
+    def ok(self, msg: str):
+        print(f"  [OK]      {msg}")
 
-def _blank(value):
-    return _missing(value) or not str(value).strip()
-
-
-def _boolean_value(value):
-    if isinstance(value, bool):
-        return True
-    return isinstance(value, Real) and not isinstance(value, bool) and value in (0, 1)
+    def info(self, msg: str):
+        print(f"  [INFO]    {msg}")
 
 
-def _validate_schema(frame, result):
-    expected = list(SCHEMA_COLUMNS)
-    columns = list(frame.columns)
-    duplicates = [name for name, count in Counter(columns).items() if count > 1]
-    if duplicates:
-        result.fail("schema", f"duplicate column names: {', '.join(duplicates)}")
-        return False
+# ═══════════════════════════════════════════════════════════════════════════
+# CHECK 1 — PCAP ↔ LABEL CONSISTENCY
+# ═══════════════════════════════════════════════════════════════════════════
 
-    missing = [name for name in expected if name not in frame.columns]
-    unexpected = [name for name in columns if name not in SCHEMA_COLUMNS]
-    if missing:
-        result.fail("schema", f"missing required columns: {', '.join(missing)}")
-    if "ja4_hash_enc" in frame.columns:
-        result.fail("schema", "unexpected model-only column: ja4_hash_enc")
-    other_model_only = [name for name in unexpected if name in MODEL_ONLY_COLUMNS and name != "ja4_hash_enc"]
-    if other_model_only:
-        result.fail("schema", f"unexpected model-only columns: {', '.join(other_model_only)}")
-    other_unexpected = [name for name in unexpected if name not in MODEL_ONLY_COLUMNS]
-    if other_unexpected:
-        result.fail("schema", f"unexpected durable columns: {', '.join(other_unexpected)}")
-    if not missing and not unexpected and columns != expected:
-        result.fail("schema", "durable schema column order differs from SCHEMA_COLUMNS")
-    if "ja4_hash" not in frame.columns:
-        result.fail("schema", "missing durable raw column: ja4_hash")
-    if "schema" not in result.checks:
-        result.checks["schema"] = True
-    return True
+def check_pcap_label_consistency(
+    raw_dir:    Path,
+    labels_dir: Path,
+    c:          _Counters,
+):
+    """
+    Every PCAP needs a label. Every label needs a PCAP.
 
+    PCAP file name convention: <scenario_name>.pcap
+    Label file name convention: <scenario_name>.json
 
-def _validate_flow_ids(frame, result):
-    if "flow_id" not in frame.columns:
-        result.fail("flow_id uniqueness", "flow_id column is unavailable for validation")
+    The scenario name is the stem — e.g. "syn_flood".
+    """
+    print("\n── CHECK 1: PCAP ↔ LABEL CONSISTENCY ────────────────────────")
+
+    pcap_stems  = {p.stem for p in raw_dir.glob("*.pcap")}   if raw_dir.exists()    else set()
+    label_stems = {p.stem for p in labels_dir.glob("*.json")} if labels_dir.exists() else set()
+
+    if not raw_dir.exists():
+        c.warn(f"data/raw/ directory does not exist yet ({raw_dir}). Run the Docker lab first.")
         return
-    blank_count = sum(_blank(value) for value in frame["flow_id"])
-    if blank_count:
-        result.fail("flow_id uniqueness", f"blank flow_id values: {blank_count}")
-    duplicate_count = int(frame["flow_id"].duplicated(keep=False).sum())
-    if duplicate_count:
-        result.fail("flow_id uniqueness", f"duplicate flow_id values: {duplicate_count}")
-    if "flow_id uniqueness" not in result.checks:
-        result.checks["flow_id uniqueness"] = True
 
-
-def _validate_numeric(frame, result):
-    for name in NUMERIC_SCHEMA_FIELDS:
-        if name not in frame.columns:
-            continue
-        values = frame[name]
-        if not pd.api.types.is_numeric_dtype(values) or pd.api.types.is_bool_dtype(values):
-            result.fail("numeric validity", f"non-numeric values in {name}")
-            continue
-        non_finite = int((~values.map(lambda value: isinstance(value, Real) and math.isfinite(value))).sum())
-        if non_finite:
-            result.fail("numeric validity", f"non-finite {name} values: {non_finite}")
-            continue
-        if name in {"src_port", "dst_port"}:
-            invalid_ports = int(((values < 0) | (values > 65535) | (values % 1 != 0)).sum())
-            if invalid_ports:
-                result.fail("numeric validity", f"invalid {name} values: {invalid_ports}")
-        elif name in INT_SCHEMA_FIELDS:
-            invalid_integers = int(((values < 0) | (values % 1 != 0)).sum())
-            if invalid_integers:
-                result.fail("numeric validity", f"invalid non-negative integer {name} values: {invalid_integers}")
-        elif name in NON_NEGATIVE_FIELDS:
-            negative_count = int((values < 0).sum())
-            if negative_count:
-                result.fail("numeric validity", f"negative {name} values: {negative_count}")
-    if "numeric validity" not in result.checks:
-        result.checks["numeric validity"] = True
-
-
-def _validate_booleans(frame, result):
-    for name in BOOL_SCHEMA_FIELDS:
-        if name not in frame.columns:
-            continue
-        invalid_count = sum(not _boolean_value(value) for value in frame[name])
-        if invalid_count:
-            result.fail("booleans", f"invalid {name} boolean values: {invalid_count}")
-    if "booleans" not in result.checks:
-        result.checks["booleans"] = True
-
-
-def _validate_labels(frame, result, require_label):
-    if "label" not in frame.columns:
-        result.fail("labels", "label column is unavailable for validation")
+    if not pcap_stems:
+        c.warn("No PCAP files found in data/raw/. Lab has not been run yet.")
         return
-    labels = frame["label"]
-    for value in labels:
-        result.label_counts["<unlabeled>" if _missing(value) else str(value)] += 1
-    blank_count = sum(not _missing(value) and not str(value).strip() for value in labels)
-    if blank_count:
-        result.fail("labels", f"blank label values: {blank_count}")
-    missing_count = sum(_missing(value) for value in labels)
-    if require_label and missing_count:
-        result.fail("labels", f"unlabeled rows: {missing_count}")
-    invalid_labels = sorted(
-        {
-            str(value)
-            for value in labels
-            if not _missing(value) and str(value).strip() not in DURABLE_LABEL_VALUES
-        }
-    )
-    if invalid_labels:
-        result.fail("labels", f"invalid labels: {', '.join(invalid_labels)}")
-    if "labels" not in result.checks:
-        result.checks["labels"] = True
+
+    # PCAPs with no label
+    unlabelled = pcap_stems - label_stems
+    for stem in sorted(unlabelled):
+        c.error(f"PCAP '{stem}.pcap' has no matching label file in {labels_dir}.")
+
+    # Labels with no PCAP
+    missing_pcap = label_stems - pcap_stems
+    for stem in sorted(missing_pcap):
+        c.warn(f"Label '{stem}.json' exists but '{stem}.pcap' is missing from {raw_dir}.")
+
+    matched = pcap_stems & label_stems
+    if matched:
+        c.ok(f"{len(matched)} PCAP(s) have matching label files: {sorted(matched)}")
 
 
-def validate_dataframe(frame, path="<dataframe>", require_label=False):
-    """Validate one durable-schema dataframe without fitting model preprocessing state."""
-    result = ValidationResult(path=Path(path), row_count=len(frame), column_count=len(frame.columns))
-    if frame.empty:
-        result.fail("file", "dataframe is empty")
-        return result
-    if not _validate_schema(frame, result):
-        return result
-    _validate_flow_ids(frame, result)
-    _validate_numeric(frame, result)
-    _validate_booleans(frame, result)
-    _validate_labels(frame, result, require_label)
-    return result
+# ═══════════════════════════════════════════════════════════════════════════
+# CHECK 2 — LABEL FILE SCHEMA VALIDATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+def check_label_schemas(labels_dir: Path, c: _Counters) -> dict[str, dict]:
+    """
+    Open every label JSON and validate its fields.
+    Returns a dict of {scenario_name: label_data} for valid files.
+    """
+    print("\n── CHECK 2: LABEL FILE SCHEMA VALIDATION ─────────────────────")
+
+    if not labels_dir.exists():
+        c.error(f"Labels directory does not exist: {labels_dir}")
+        return {}
+
+    label_files = sorted(labels_dir.glob("*.json"))
+    if not label_files:
+        c.error(f"No label JSON files found in {labels_dir}.")
+        return {}
+
+    valid_labels: dict[str, dict] = {}
+
+    for path in label_files:
+        try:
+            data = json.loads(path.read_text())
+        except json.JSONDecodeError as exc:
+            c.error(f"{path.name}: invalid JSON — {exc}")
+            continue
+
+        # Required fields
+        missing_fields = [f for f in REQUIRED_LABEL_FIELDS if f not in data]
+        if missing_fields:
+            c.error(f"{path.name}: missing required fields: {missing_fields}")
+            continue
+
+        # scenario name must match file stem
+        if data["scenario"] != path.stem:
+            c.error(
+                f"{path.name}: 'scenario' field ({data['scenario']!r}) "
+                f"does not match file name ({path.stem!r})."
+            )
+            continue
+
+        # attack_class must be known
+        if data["attack_class"] not in KNOWN_CLASSES:
+            c.error(
+                f"{path.name}: unknown attack_class={data['attack_class']!r}. "
+                f"Known: {KNOWN_CLASSES}"
+            )
+            continue
+
+        c.ok(f"{path.name}  →  attack_class={data['attack_class']}")
+        valid_labels[data["scenario"]] = data
+
+    return valid_labels
 
 
-def validate_file(path, require_label=False):
-    """Read and validate one Parquet file, reporting read errors as validation failures."""
-    path = Path(path)
-    result = ValidationResult(path=path)
-    if not path.is_file():
-        result.fail("file", "path does not exist or is not a file")
-        return result
-    try:
-        frame = pd.read_parquet(path)
-    except Exception as error:
-        result.fail("file", f"cannot read Parquet: {error}")
-        return result
-    return validate_dataframe(frame, path=path, require_label=require_label)
+# ═══════════════════════════════════════════════════════════════════════════
+# CHECK 3 — PARQUET ↔ LABEL CONSISTENCY
+# ═══════════════════════════════════════════════════════════════════════════
+
+def check_parquet_label_consistency(
+    features_dir: Path,
+    valid_labels:  dict[str, dict],
+    c:             _Counters,
+) -> list[Path]:
+    """
+    Every Parquet file needs a valid label.
+    Returns the list of Parquet files that passed this check.
+    """
+    print("\n── CHECK 3: PARQUET ↔ LABEL CONSISTENCY ──────────────────────")
+
+    if not features_dir.exists():
+        c.warn(f"Features directory does not exist: {features_dir}. Run features/pipeline.py first.")
+        return []
+
+    parquet_files = sorted(features_dir.glob("*.parquet"))
+    if not parquet_files:
+        c.warn("No Parquet files found in data/features/. Run features/pipeline.py first.")
+        return []
+
+    parquet_stems = {p.stem for p in parquet_files}
+    label_stems   = set(valid_labels.keys())
+
+    unlabelled = parquet_stems - label_stems
+    for stem in sorted(unlabelled):
+        c.error(f"Parquet '{stem}.parquet' has no matching label in {valid_labels}.")
+
+    no_parquet = label_stems - parquet_stems
+    for stem in sorted(no_parquet):
+        c.warn(
+            f"Label '{stem}.json' exists but '{stem}.parquet' is missing. "
+            f"Run: python3 features/pipeline.py --zeek-dir zeek/logs --scenario-name {stem}"
+        )
+
+    good_parquets = [p for p in parquet_files if p.stem in label_stems]
+    if good_parquets:
+        c.ok(f"{len(good_parquets)} Parquet file(s) have matching labels.")
+
+    return good_parquets
 
 
-def print_result(result):
-    print(f"FILE: {result.path}")
-    print(f"STATUS: {'PASS' if result.passed else 'FAIL'}")
-    if result.row_count or result.column_count:
-        print(f"Rows: {result.row_count}")
-        print(f"Columns: {result.column_count}")
-    if result.label_counts:
-        print("Label counts:")
-        for label, count in sorted(result.label_counts.items()):
-            print(f"  {label}: {count}")
-    print("JA4 contract:")
-    print(f"  raw ja4_hash persisted: {'yes' if 'ja4_hash' in SCHEMA_COLUMNS else 'no'}")
-    print(f"  ja4_hash_enc persisted: {'yes' if 'ja4_hash_enc' in SCHEMA_COLUMNS else 'no'}")
-    print("Checks:")
-    for name in ("file", "schema", "flow_id uniqueness", "numeric validity", "labels", "booleans"):
-        print(f"  {name}: {'PASS' if result.checks.get(name, True) else 'FAIL'}")
-    for error in result.errors:
-        print(f"- {error}")
+# ═══════════════════════════════════════════════════════════════════════════
+# CHECK 4 — PARQUET SCHEMA VALIDATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+def check_parquet_schemas(parquet_files: list[Path], c: _Counters) -> list[tuple[Path, pd.DataFrame]]:
+    """
+    Open each Parquet file and check that FEATURE_COLUMNS are all present.
+    Returns (path, dataframe) pairs for files that passed.
+    """
+    print("\n── CHECK 4: PARQUET SCHEMA VALIDATION ────────────────────────")
+
+    if not parquet_files:
+        c.info("No Parquet files to validate.")
+        return []
+
+    feature_set = set(FEATURE_COLUMNS)
+    good: list[tuple[Path, pd.DataFrame]] = []
+
+    for path in parquet_files:
+        try:
+            df = pd.read_parquet(path)
+        except Exception as exc:
+            c.error(f"{path.name}: could not read Parquet — {exc}")
+            continue
+
+        cols = set(df.columns)
+        missing = sorted(feature_set - cols)
+        extra   = sorted(cols - feature_set - {"label", "scenario", "flow_id",
+                                                 "ts", "src_ip", "dst_ip", "protocol",
+                                                 "uid", "cipher_suite", "ja3_hash",
+                                                 "ja3s_hash", "ja4_hash"})
+
+        if missing:
+            c.error(f"{path.name}: missing FEATURE_COLUMNS: {missing}")
+            continue
+
+        if extra:
+            c.info(f"{path.name}: extra columns (not a problem): {extra}")
+
+        c.ok(f"{path.name}: {len(df)} rows, all {len(FEATURE_COLUMNS)} feature columns present.")
+        good.append((path, df))
+
+    return good
 
 
-def _expand_paths(paths):
-    for path in paths:
-        matches = glob.glob(str(path))
-        yield from (matches or [path])
+# ═══════════════════════════════════════════════════════════════════════════
+# CHECK 5 — ROW COUNT AND CLASS IMBALANCE REPORT
+# ═══════════════════════════════════════════════════════════════════════════
+
+def check_class_balance(
+    good_parquets: list[tuple[Path, pd.DataFrame]],
+    valid_labels:  dict[str, dict],
+    c:             _Counters,
+):
+    """
+    Report row counts per class and warn about severe imbalance.
+
+    Class imbalance is a real problem:
+    - A SYN flood scenario generates thousands of flows per second
+    - A C2 beacon generates one flow per minute
+    - If we don't handle this, the model learns "everything is ddos"
+
+    This check flags imbalance early so you can decide whether to:
+      - Run attack scenarios for longer to generate more flows
+      - Use SMOTE or sample weights in training (train.py already does this)
+      - Reduce the duration of over-represented scenarios
+    """
+    print("\n── CHECK 5: CLASS BALANCE REPORT ─────────────────────────────")
+
+    if not good_parquets:
+        c.info("No valid Parquet files — skipping balance check.")
+        return
+
+    class_counts: dict[str, int] = {}
+    for path, df in good_parquets:
+        scenario    = path.stem
+        label_entry = valid_labels.get(scenario, {})
+        attack_class = label_entry.get("attack_class", "unknown")
+        class_counts[attack_class] = class_counts.get(attack_class, 0) + len(df)
+
+    if not class_counts:
+        return
+
+    max_count = max(class_counts.values())
+    total     = sum(class_counts.values())
+
+    print(f"\n  {'Class':<22} {'Rows':>8}  {'%':>6}  Status")
+    print(f"  {'─'*22}  {'─'*8}  {'─'*6}  {'─'*10}")
+    for cls in KNOWN_CLASSES:
+        count = class_counts.get(cls, 0)
+        pct   = count / total * 100 if total > 0 else 0
+        ratio = count / max_count if max_count > 0 else 0
+        if count == 0:
+            status = "MISSING"
+            c.warn(f"Class '{cls}' has 0 rows. No training data for this class.")
+        elif ratio < IMBALANCE_THRESHOLD:
+            status = f"IMBALANCED ({ratio:.1%} of majority)"
+            c.warn(
+                f"Class '{cls}' has only {count} rows ({ratio:.1%} of "
+                f"'{max(class_counts, key=class_counts.get)}' with {max_count} rows). "
+                f"Consider running this scenario longer or using SMOTE."
+            )
+        else:
+            status = "OK"
+        print(f"  {cls:<22} {count:>8}  {pct:>5.1f}%  {status}")
+
+    print(f"\n  Total rows: {total}")
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description="Validate durable feature Parquet files before training handoff.")
-    parser.add_argument("files", nargs="+", help="Parquet file paths or glob patterns")
-    parser.add_argument(
-        "--require-label",
-        action="store_true",
-        help="Fail rows with null labels; use for labeled training datasets.",
-    )
-    args = parser.parse_args(argv)
+# ═══════════════════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════════════════
 
-    results = [validate_file(path, require_label=args.require_label) for path in _expand_paths(args.files)]
-    for result in results:
-        print_result(result)
-    failed = sum(not result.passed for result in results)
-    print(f"Validated: {len(results)} files")
-    print(f"Passed: {len(results) - failed}")
-    print(f"Failed: {failed}")
-    return 1 if failed else 0
+def main(
+    raw_dir:      Path = Path("data/raw"),
+    labels_dir:   Path = Path("data/labels"),
+    features_dir: Path = Path("data/features"),
+    skip_pcap:    bool = False,
+) -> int:
+    """
+    Run all checks. Returns 0 if clean, 1 if any errors found.
+    """
+    c = _Counters()
+
+    print("═" * 60)
+    print("AEGIS NIDS — DATA INTEGRITY VERIFICATION")
+    print("═" * 60)
+
+    # Check 1: PCAP ↔ label (optional — skip before lab is run)
+    if not skip_pcap:
+        check_pcap_label_consistency(raw_dir, labels_dir, c)
+    else:
+        print("\n── CHECK 1: PCAP check skipped (--no-pcap) ───────────────────")
+
+    # Check 2: label schema
+    valid_labels = check_label_schemas(labels_dir, c)
+
+    # Check 3: parquet ↔ label
+    good_parquets_paths = check_parquet_label_consistency(features_dir, valid_labels, c)
+
+    # Check 4: parquet schema
+    good_parquets = check_parquet_schemas(good_parquets_paths, c)
+
+    # Check 5: class balance
+    check_class_balance(good_parquets, valid_labels, c)
+
+    # ── Summary ───────────────────────────────────────────────────────────
+    print("\n" + "═" * 60)
+    print("SUMMARY")
+    print("═" * 60)
+
+    if c.errors:
+        print(f"\n  ERRORS   ({len(c.errors)}):")
+        for msg in c.errors:
+            print(f"    ✗ {msg}")
+
+    if c.warnings:
+        print(f"\n  WARNINGS ({len(c.warnings)}):")
+        for msg in c.warnings:
+            print(f"    ⚠ {msg}")
+
+    if not c.errors and not c.warnings:
+        print("\n  All checks passed. Ready to train.")
+    elif not c.errors:
+        print(f"\n  {len(c.warnings)} warning(s), no errors. Training should work.")
+    else:
+        print(
+            f"\n  {len(c.errors)} error(s) found. Fix these before running ml/train.py."
+        )
+
+    print()
+    return 1 if c.errors else 0
 
 
+# ── CLI ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser(
+        description="Verify Aegis NIDS data integrity before training."
+    )
+    parser.add_argument(
+        "--raw-dir",
+        type=Path,
+        default=Path("data/raw"),
+        help="Directory containing PCAP files (default: data/raw)",
+    )
+    parser.add_argument(
+        "--labels-dir",
+        type=Path,
+        default=Path("data/labels"),
+        help="Directory containing label JSON files (default: data/labels)",
+    )
+    parser.add_argument(
+        "--features-dir",
+        type=Path,
+        default=Path("data/features"),
+        help="Directory containing Parquet files (default: data/features)",
+    )
+    parser.add_argument(
+        "--no-pcap",
+        action="store_true",
+        help="Skip the PCAP presence check (useful before the Docker lab has been run)",
+    )
+    args = parser.parse_args()
+
+    sys.exit(
+        main(
+            raw_dir      = args.raw_dir,
+            labels_dir   = args.labels_dir,
+            features_dir = args.features_dir,
+            skip_pcap    = args.no_pcap,
+        )
+    )

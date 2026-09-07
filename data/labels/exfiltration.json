@@ -1,0 +1,8 @@
+{
+  "scenario":    "exfiltration",
+  "attack_class": "exfiltration",
+  "src_ip":      "10.10.0.2",
+  "dst_ip":      "10.10.0.3",
+  "description": "Data exfiltration: sustained high-volume outbound data transfer with heavily asymmetric orig/resp byte ratio, simulating bulk data theft.",
+  "pcap":        "data/raw/exfiltration.pcap"
+}

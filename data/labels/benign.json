@@ -1,0 +1,8 @@
+{
+  "scenario":    "benign",
+  "attack_class": "benign",
+  "src_ip":      "10.10.0.4",
+  "dst_ip":      "10.10.0.3",
+  "description": "Normal background traffic: HTTP downloads, DNS lookups of real domains, iperf3 throughput tests. Baseline for normal network behaviour.",
+  "pcap":        "data/raw/benign.pcap"
+}

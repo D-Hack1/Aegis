@@ -1,0 +1,8 @@
+{
+  "scenario":    "c2_beacon",
+  "attack_class": "c2_beaconing",
+  "src_ip":      "10.10.0.2",
+  "dst_ip":      "10.10.0.3",
+  "description": "Simulated botnet C2 beaconing: periodic TCP connections to a fixed destination at regular intervals, mimicking malware heartbeat traffic.",
+  "pcap":        "data/raw/c2_beacon.pcap"
+}
