@@ -73,11 +73,14 @@ Returns a paginated list of alerts. Poll this every 5 seconds for the live feed.
 | `start_time` | string | No | — | ISO 8601 UTC — only return alerts after this time |
 | `end_time` | string | No | — | ISO 8601 UTC — only return alerts before this time |
 | `src_ip` | string | No | — | Filter by source IP address |
+| `evidence` | string | No | — | Full-text keyword search across evidence strings |
 
 **Example Request**
 ```
 GET /alerts?page=1&page_size=20&severity=critical
 GET /alerts?threat_class=c2_beaconing&start_time=2025-09-04T20:00:00Z
+GET /alerts?evidence=fixed+intervals
+GET /alerts?evidence=port+scan&severity=high
 ```
 
 **Response `200 OK`**
@@ -118,6 +121,7 @@ GET /alerts?threat_class=c2_beaconing&start_time=2025-09-04T20:00:00Z
 - `kill_chain_id` is `null` if this alert is not part of a multi-stage attack chain
 - `anomaly_score` is `0.0–1.0` — higher = more anomalous
 - `confidence` is `0.0–1.0`
+- `evidence` search is **full-text / keyword match** — partial words work, it is not an exact string match. `"fixed intervals"` will match `"Repeated communication at fixed intervals"`. Combine with other filters freely — e.g. `?evidence=fingerprint&severity=critical`
 
 ---
 
