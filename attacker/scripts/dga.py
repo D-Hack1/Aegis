@@ -15,34 +15,39 @@ def generate_dga_domain(rng, length=12):
         )
     )
 
-    tld = rng.choice(tlds)
-
-    return domain + tld
+    return domain + rng.choice(tlds)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="DGA Traffic Generator"
+        description="Generate DGA DNS traffic."
     )
 
     parser.add_argument(
         "--dns-server",
         required=True,
-        help="DNS server IP address",
+        help="DNS server IPv4 address",
     )
 
     parser.add_argument(
         "--duration",
         type=int,
         default=3600,
-        help="Total duration to run in seconds",
+        help="Total duration in seconds",
     )
 
     parser.add_argument(
         "--queries-per-min",
         type=int,
         default=30,
-        help="Number of DNS queries per minute (20-50)",
+        help="DNS queries per minute (20-50)",
+    )
+
+    parser.add_argument(
+        "--count",
+        type=int,
+        default=None,
+        help="Exact number of DNS queries to generate",
     )
 
     parser.add_argument(
@@ -66,6 +71,9 @@ def main():
     if not 20 <= args.queries_per_min <= 50:
         parser.error("--queries-per-min must be between 20 and 50")
 
+    if args.count is not None and args.count <= 0:
+        parser.error("--count must be greater than zero")
+
     rng = random.Random(args.seed)
 
     query_interval = 60.0 / args.queries_per_min
@@ -74,18 +82,33 @@ def main():
     sent = 0
     current_time = 0.0
 
+    # Use unique source ports so each DNS query has a
+    # different 5-tuple and can become a separate Zeek flow.
+    source_ports = list(range(1024, 1024 + 64512))
+    rng.shuffle(source_ports)
+
     print(
-        f"Generating DGA traffic to DNS server {args.dns_server}:53 "
-        f"at approximately {args.queries_per_min} queries/min "
-        f"for {args.duration} seconds."
+        f"Generating DGA traffic to {args.dns_server}:53 "
+        f"at approximately {args.queries_per_min} queries/min."
     )
 
-    while current_time < args.duration:
+    while True:
+        if args.count is not None:
+            if sent >= args.count:
+                break
+        elif current_time >= args.duration:
+            break
+
         domain = generate_dga_domain(rng)
+
+        src_port = source_ports[sent]
 
         packet = (
             IP(dst=args.dns_server)
-            / UDP(dport=53)
+            / UDP(
+                sport=src_port,
+                dport=53,
+            )
             / DNS(
                 rd=1,
                 qd=DNSQR(
@@ -102,7 +125,8 @@ def main():
 
         print(
             f"Query #{sent}: {domain} A -> "
-            f"{args.dns_server}:53"
+            f"{args.dns_server}:53 "
+            f"(source port {src_port})"
         )
 
         jitter = rng.uniform(

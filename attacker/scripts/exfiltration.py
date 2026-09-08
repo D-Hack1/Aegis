@@ -6,20 +6,20 @@ from scapy.all import IP, UDP, Raw, wrpcap
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Data Exfiltration Traffic Generator"
+        description="Generate data exfiltration traffic."
     )
 
     parser.add_argument(
         "--dst",
         required=True,
-        help="Destination IP address",
+        help="Destination IPv4 address",
     )
 
     parser.add_argument(
         "--port",
         type=int,
         required=True,
-        help="Starting destination UDP port",
+        help="Destination UDP port",
     )
 
     parser.add_argument(
@@ -40,7 +40,14 @@ def main():
         "--duration",
         type=int,
         default=3600,
-        help="Total duration to generate in seconds",
+        help="Total duration in seconds",
+    )
+
+    parser.add_argument(
+        "--count",
+        type=int,
+        default=None,
+        help="Exact number of UDP packets to generate",
     )
 
     parser.add_argument(
@@ -63,64 +70,75 @@ def main():
     if args.duration <= 0:
         parser.error("--duration must be greater than zero")
 
+    if args.count is not None and args.count <= 0:
+        parser.error("--count must be greater than zero")
+
     packets = []
-    burst_number = 0
     total_packets = 0
+    burst_number = 0
     current_time = 0.0
 
+    # One unique source port per packet.
+    source_ports = list(range(1024, 65536))
+    random.shuffle(source_ports)
+
     print(
-        f"Generating exfiltration traffic to {args.dst} "
-        f"for {args.duration}s."
+        f"Generating exfiltration traffic to "
+        f"{args.dst}:{args.port}."
     )
 
-    while current_time < args.duration:
+    while True:
+        if args.count is not None:
+            if total_packets >= args.count:
+                break
+        elif current_time >= args.duration:
+            break
+
         burst_number += 1
-
-        # Give every burst its own destination port.
-        burst_port = args.port + burst_number - 1
-
-        if burst_port > 65535:
-            burst_port = args.port + (
-                (burst_number - 1) % (65535 - args.port + 1)
-            )
-
+        burst_start = current_time
         burst_end = min(
             current_time + args.burst_duration,
             args.duration,
         )
 
-        packets_sent = 0
+        packets_in_burst = 0
 
         print(
             f"Starting burst #{burst_number} "
-            f"to {args.dst}:{burst_port} "
             f"for {args.burst_duration:g}s..."
         )
 
         while current_time < burst_end:
+            if args.count is not None and total_packets >= args.count:
+                break
+
             payload_size = random.randint(1200, 1450)
-            payload = b"X" * payload_size
 
             packet = (
                 IP(dst=args.dst)
-                / UDP(dport=burst_port)
-                / Raw(load=payload)
+                / UDP(
+                    sport=source_ports[total_packets],
+                    dport=args.port,
+                )
+                / Raw(load=b"X" * payload_size)
             )
 
             packet.time = current_time
             packets.append(packet)
 
-            packets_sent += 1
             total_packets += 1
+            packets_in_burst += 1
 
-            # Preserve the original 10 ms packet spacing.
+            # 100 packets/sec.
             current_time += 0.01
 
         print(
             f"Burst #{burst_number} complete. "
-            f"Generated {packets_sent} packets. "
-            f"Idling for {args.idle_gap:g}s..."
+            f"Generated {packets_in_burst} packets."
         )
+
+        if args.count is not None and total_packets >= args.count:
+            break
 
         current_time += args.idle_gap
 

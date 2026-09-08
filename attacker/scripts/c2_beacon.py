@@ -45,6 +45,13 @@ def main():
     )
 
     parser.add_argument(
+        "--count",
+        type=int,
+        default=None,
+        help="Number of beacons to generate (overrides duration if specified)",
+    )
+
+    parser.add_argument(
         "--output",
         default="data/raw/c2_beacon_candidate.pcap",
         help="Output PCAP file",
@@ -65,22 +72,61 @@ def main():
     if args.jitter < 0 or args.jitter > args.interval:
         parser.error("--jitter must be >= 0 and <= --interval")
 
-    start_time = time.monotonic()
-    end_time = start_time + args.duration
+    if args.count is not None and args.count <= 0:
+        parser.error("--count must be greater than zero")
+
+    # We need enough source ports for unique flows.
+    # Ports 1024-65535 give us 64512 possible source ports.
+    if args.count is not None and args.count > 64512:
+        parser.error("--count cannot exceed 64512")
+
+    # Create unique source ports and shuffle them so the sequence
+    # isn't simply 1024, 1025, 1026, ...
+    if args.count is not None:
+        source_ports = list(range(1024, 1024 + args.count))
+        random.shuffle(source_ports)
+    else:
+        source_ports = None
 
     packets = []
     sent = 0
     current_time = 0.0
 
-    print(
-        f"Generating C2 beaconing to {args.dst}:{args.port} "
-        f"every ~{args.interval:g}s ±{args.jitter:g}s "
-        f"for {args.duration:g}s."
-    )
+    if args.count is not None:
+        print(
+            f"Generating {args.count} C2 beacons to "
+            f"{args.dst}:{args.port} with "
+            f"~{args.interval:g}s ±{args.jitter:g}s jitter."
+        )
+    else:
+        print(
+            f"Generating C2 beaconing to {args.dst}:{args.port} "
+            f"every ~{args.interval:g}s ±{args.jitter:g}s "
+            f"for {args.duration:g}s."
+        )
 
-    while current_time < args.duration:
-        # Use a different source port for every beacon.
-        src_port = random.randint(1024, 65535)
+    while True:
+        # Duration mode
+        if args.count is None and current_time >= args.duration:
+            break
+
+        # Count mode
+        if args.count is not None and sent >= args.count:
+            break
+
+        # Every beacon gets a unique source port.
+        if source_ports is not None:
+            src_port = source_ports[sent]
+        else:
+            # Duration mode also avoids source-port reuse.
+            # The maximum practical number of beacons is 64512.
+            if sent >= 64512:
+                print(
+                    "Reached the maximum number of unique source ports."
+                )
+                break
+
+            src_port = 1024 + sent
 
         # Slightly vary the payload size.
         payload_size = random.randint(10, 50)
@@ -96,17 +142,23 @@ def main():
             / Raw(load=payload)
         )
 
-        # Timestamp packet relative to the beginning of the capture.
+        # Timestamp relative to the beginning of the PCAP.
         packet.time = current_time
-        packets.append(packet)
 
+        packets.append(packet)
         sent += 1
 
         print(
             f"Beacon #{sent}: "
             f"{args.dst}:{args.port} "
-            f"(src port {src_port}, payload {payload_size} bytes)"
+            f"(src port {src_port}, "
+            f"payload {payload_size} bytes, "
+            f"timestamp {current_time:.2f}s)"
         )
+
+        # Don't add an unnecessary delay after the final beacon.
+        if args.count is not None and sent >= args.count:
+            break
 
         # Randomized beacon interval.
         sleep_time = args.interval + random.uniform(
