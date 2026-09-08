@@ -11,13 +11,18 @@ import { Search, Filter, Shield } from 'lucide-react';
 
 export const LiveFeed: React.FC = () => {
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
+  const [evidenceSearch, setEvidenceSearch] = useState<string>('');
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['alerts', 'live'],
-    queryFn: () => fetchAlerts({ page: 1, page_size: 50 }),
+    queryKey: ['alerts', 'live', evidenceSearch],
+    queryFn: () =>
+      fetchAlerts({
+        page: 1,
+        page_size: 50,
+        ...(evidenceSearch ? { evidence: evidenceSearch } : {}),
+      }),
     refetchInterval: 5000, // Poll every 5s
   });
-
   return (
     <div className="h-full flex flex-col p-6 max-w-7xl mx-auto w-full">
       <div className="flex items-end justify-between mb-8">
@@ -31,12 +36,22 @@ export const LiveFeed: React.FC = () => {
           </p>
         </div>
         
-        <div className="flex gap-4">
+        <div className="flex gap-4 items-center">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
             <input 
               type="text" 
               placeholder="Search IPs..." 
+              className="bg-zinc-900 border border-zinc-700 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-sky-500 transition-colors text-zinc-200"
+            />
+          </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+            <input
+              type="text"
+              placeholder="Search evidence..."
+              value={evidenceSearch}
+              onChange={(e) => setEvidenceSearch(e.target.value)}
               className="bg-zinc-900 border border-zinc-700 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-sky-500 transition-colors text-zinc-200"
             />
           </div>
