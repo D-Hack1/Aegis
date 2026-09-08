@@ -49,7 +49,9 @@ def safe_float(value, default=0.0):
 
 
 def _parse_required_int(value, field):
-    if value is None or (isinstance(value, str) and value.strip() in {"", "-"}):
+    if value == "-":
+        return 0
+    if value is None or (isinstance(value, str) and value.strip() == ""):
         raise ValueError(f"feature row has an invalid required integer field: {field}")
     try:
         number = float(value)
@@ -80,11 +82,12 @@ def safe_divide(numerator, denominator):
     return result if math.isfinite(result) else 0.0
 
 
-def read_zeek_log(path):
+def read_zeek_log(path, preserve_dash_fields=()):
     """Read a Zeek TSV log while preserving its #fields column names."""
     separator = "\t"
     fields = None
     rows = []
+    preserve_dash_fields = set(preserve_dash_fields)
 
     with Path(path).open(encoding="utf-8") as log_file:
         for raw_line in log_file:
@@ -102,7 +105,10 @@ def read_zeek_log(path):
                 values = line.split(separator)
                 if len(values) != len(fields):
                     raise ValueError("Zeek log row does not match the #fields header")
-                rows.append([None if value == "-" else value for value in values])
+                rows.append([
+                    None if value == "-" and field not in preserve_dash_fields else value
+                    for field, value in zip(fields, values)
+                ])
 
     if fields is None:
         raise ValueError("Zeek log is missing a #fields header")
@@ -111,7 +117,12 @@ def read_zeek_log(path):
 
 def read_zeek_conn_log(path):
     """Read conn.log using the generic Zeek TSV reader."""
-    return read_zeek_log(path)
+    return read_zeek_log(
+        path,
+        preserve_dash_fields=(
+            "id.orig_p", "id.resp_p", "orig_bytes", "resp_bytes", "orig_pkts", "resp_pkts",
+        ),
+    )
 
 
 def _clean_ip(value):
