@@ -21,8 +21,8 @@ services:
     devices:
       - /dev/net/tun:/dev/net/tun
     volumes:
-      - ./attacker/scripts:/scripts
-      - ./data/raw:/pcaps
+      - ./attacker/scripts:/scripts:z
+      - ./data/raw:/pcaps:z
     stdin_open: true
     tty: true
 
@@ -39,7 +39,7 @@ services:
     devices:
     - /dev/net/tun:/dev/net/tun
     volumes:
-      - ./data/raw:/pcaps
+      - ./data/raw:/pcaps:z
 
   benign:
     build:
@@ -49,7 +49,7 @@ services:
       labnet:
         ipv4_address: 10.10.0.4
     volumes:
-      - ./benign/scripts:/scripts
+      - ./benign/scripts:/scripts:z
 
   zeek:
     image: zeek/zeek:6.0.3
@@ -60,9 +60,11 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
+    user: root
     volumes:
-      - ./zeek/scripts:/usr/local/zeek/share/zeek/site
-      - ./zeek/logs:/zeek/logs
+      - ./zeek/scripts:/zeek/site:z
+      - ./zeek/logs:/zeek/logs:z
+      - ./data/raw:/pcaps:z
     command: tail -f /dev/null
 
   zookeeper:
