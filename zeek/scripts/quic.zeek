@@ -73,10 +73,6 @@ event zeek_init()
 event connection_state_remove(c: connection)
 {
     # Heuristic: UDP traffic to port 443 is treated as QUIC-like.
-    # Use get_conn_transport_proto() — always available on the base connection
-    # record regardless of whether base/protocols/conn has attached c$conn.
-    if ( get_conn_transport_proto(c$id) != udp )
-        return;
     if ( c$id$resp_p != 443/udp )
         return;
 
