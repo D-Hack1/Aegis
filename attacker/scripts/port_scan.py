@@ -2,7 +2,7 @@ import argparse
 import ipaddress
 import time
 
-from scapy.all import IP, TCP, send
+from scapy.all import IP, TCP, send, wrpcap
 
 
 def main():
@@ -11,6 +11,7 @@ def main():
     parser.add_argument("--start-port", type=int, default=1, help="First destination port")
     parser.add_argument("--end-port", type=int, default=1024, help="Last destination port")
     parser.add_argument("--delay", type=float, default=0.01, help="Delay between packets in seconds")
+    parser.add_argument("--output", default="data/raw/port_scan_candidate.pcap", help="Output PCAP file")
     args = parser.parse_args()
 
     try:
@@ -26,11 +27,15 @@ def main():
         parser.error("--delay must be zero or greater")
 
     print(f"Starting SYN scan of {args.target} on ports {args.start_port}-{args.end_port}.")
+    packets = []
     for port in range(args.start_port, args.end_port + 1):
-        send(IP(dst=args.target) / TCP(dport=port, flags="S"), verbose=False)
+        packet = IP(dst=args.target) / TCP(dport=port, flags="S")
+        packets.append(packet)
+        send(packet, verbose=False)
         if args.delay:
             time.sleep(args.delay)
-    print(f"Completed SYN scan of {args.target} on ports {args.start_port}-{args.end_port}.")
+    wrpcap(args.output, packets)
+    print(f"Completed SYN scan of {args.target} on ports {args.start_port}-{args.end_port}. Wrote {len(packets)} packets to {args.output}.")
 
 
 if __name__ == "__main__":

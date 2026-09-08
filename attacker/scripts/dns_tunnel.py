@@ -18,9 +18,9 @@ def main():
         help="Tunnel-side server address assigned by iodined",
     )
     parser.add_argument(
-        "--capture",
+        "--output",
         default="/pcaps/dns_tunnel.pcap",
-        help="Victim-side capture path",
+        help="Output PCAP file",
     )
     args = parser.parse_args()
 
@@ -41,7 +41,7 @@ def main():
         f"{quoted(args.domain)}"
     )
     print("Capture victim eth0 before starting the client:")
-    print(f"  tcpdump -i eth0 -U -w {quoted(args.capture)}")
+    print(f"  tcpdump -i eth0 -U -w {quoted(args.output)}")
     print("Run the iodine client in the victim container (10.10.0.3):")
     print(f"  iodine -f -P {quoted(args.password)} {quoted(args.server)} {quoted(args.domain)}")
     print("Both containers require /dev/net/tun. This direct lab setup may fall back to raw UDP after DNS negotiation.")
