@@ -2,7 +2,7 @@ import argparse
 import random
 import time
 
-from scapy.all import IP, TCP, Raw, send
+from scapy.all import IP, TCP, Raw, wrpcap
 
 
 def main():
@@ -44,6 +44,12 @@ def main():
         help="Maximum positive/negative jitter in seconds (default: 5)",
     )
 
+    parser.add_argument(
+        "--output",
+        default="data/raw/c2_beacon_candidate.pcap",
+        help="Output PCAP file",
+    )
+
     args = parser.parse_args()
 
     # Validate arguments
@@ -62,17 +68,18 @@ def main():
     start_time = time.monotonic()
     end_time = start_time + args.duration
 
+    packets = []
     sent = 0
+    current_time = 0.0
 
     print(
-        f"Starting C2 beaconing to {args.dst}:{args.port} "
+        f"Generating C2 beaconing to {args.dst}:{args.port} "
         f"every ~{args.interval:g}s ±{args.jitter:g}s "
         f"for {args.duration:g}s."
     )
 
-    while time.monotonic() < end_time:
+    while current_time < args.duration:
         # Use a different source port for every beacon.
-        # This makes each beacon a distinct TCP 5-tuple/flow.
         src_port = random.randint(1024, 65535)
 
         # Slightly vary the payload size.
@@ -89,7 +96,9 @@ def main():
             / Raw(load=payload)
         )
 
-        send(packet, verbose=False)
+        # Timestamp packet relative to the beginning of the capture.
+        packet.time = current_time
+        packets.append(packet)
 
         sent += 1
 
@@ -105,18 +114,14 @@ def main():
             args.jitter,
         )
 
-        # Don't sleep beyond the requested duration.
-        remaining = end_time - time.monotonic()
+        current_time += sleep_time
 
-        if remaining <= 0:
-            break
+    wrpcap(args.output, packets)
 
-        sleep_time = min(sleep_time, remaining)
-
-        if sleep_time > 0:
-            time.sleep(sleep_time)
-
-    print(f"Completed C2 beaconing. Sent {sent} beacons.")
+    print(
+        f"Completed C2 beaconing generation. "
+        f"Wrote {sent} beacons to {args.output}."
+    )
 
 
 if __name__ == "__main__":

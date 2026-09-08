@@ -1,9 +1,8 @@
 import argparse
 import random
 import string
-import time
 
-from scapy.all import DNS, DNSQR, IP, UDP, send
+from scapy.all import DNS, DNSQR, IP, UDP, wrpcap
 
 
 def generate_dga_domain(rng, length=12):
@@ -53,6 +52,12 @@ def main():
         help="Seed for reproducible DGA generation",
     )
 
+    parser.add_argument(
+        "--output",
+        default="data/raw/dga_candidate.pcap",
+        help="Output PCAP file",
+    )
+
     args = parser.parse_args()
 
     if args.duration <= 0:
@@ -63,20 +68,19 @@ def main():
 
     rng = random.Random(args.seed)
 
-    start_time = time.monotonic()
-    end_time = start_time + args.duration
-
     query_interval = 60.0 / args.queries_per_min
 
+    packets = []
     sent = 0
+    current_time = 0.0
 
     print(
-        f"Starting DGA traffic to DNS server {args.dns_server}:53 "
+        f"Generating DGA traffic to DNS server {args.dns_server}:53 "
         f"at approximately {args.queries_per_min} queries/min "
         f"for {args.duration} seconds."
     )
 
-    while time.monotonic() < end_time:
+    while current_time < args.duration:
         domain = generate_dga_domain(rng)
 
         packet = (
@@ -91,7 +95,8 @@ def main():
             )
         )
 
-        send(packet, verbose=False)
+        packet.time = current_time
+        packets.append(packet)
 
         sent += 1
 
@@ -105,21 +110,13 @@ def main():
             0.1 * query_interval,
         )
 
-        sleep_time = query_interval + jitter
+        current_time += query_interval + jitter
 
-        remaining = end_time - time.monotonic()
-
-        if remaining <= 0:
-            break
-
-        sleep_time = min(sleep_time, remaining)
-
-        if sleep_time > 0:
-            time.sleep(sleep_time)
+    wrpcap(args.output, packets)
 
     print(
         f"Completed DGA traffic generation. "
-        f"Sent {sent} DNS queries."
+        f"Wrote {sent} DNS queries to {args.output}."
     )
 
 
