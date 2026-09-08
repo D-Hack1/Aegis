@@ -29,6 +29,8 @@ features/__pycache__/
 # Data — large files, not committed
 data/raw/
 data/features/
+*.pcap
+*.parquet
 # data/labels/ is committed — these are hand-authored metadata, not generated files
 
 # Zeek logs
