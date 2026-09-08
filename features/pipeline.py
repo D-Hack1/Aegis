@@ -300,9 +300,21 @@ def subdomain_count(query):
     return len([label for label in query.split(".") if label]) if query else 0
 
 
+def normalize_dns_qtype(value):
+    normalized = _text(value).upper()
+    if not normalized:
+        return ""
+    try:
+        numeric_value = float(normalized)
+    except ValueError:
+        return normalized
+    if math.isfinite(numeric_value) and numeric_value.is_integer():
+        return {1: "A", 28: "AAAA", 16: "TXT", 15: "MX"}.get(int(numeric_value), normalized)
+    return normalized
+
+
 def dns_record_type_fractions(qtypes):
-    """Use every DNS record with a non-empty qtype as the ratio denominator."""
-    normalized = [_text(qtype).upper() for qtype in qtypes if _text(qtype)]
+    normalized = [normalize_dns_qtype(qtype) for qtype in qtypes]
     if not normalized:
         return {record_type: 0.0 for record_type in ("A", "AAAA", "TXT", "MX")}
     counts = Counter(normalized)
@@ -326,7 +338,8 @@ DNS_EVENT_COLUMNS = (
 )
 DNS_FEATURE_COLUMNS = (
     "uid", "dns_query_entropy", "domain_length_mean", "domain_length_max", "subdomain_count",
-    "dns_record_type_a_ratio", "dns_record_type_txt_ratio", "dns_query_count",
+    "dns_record_type_a_ratio", "dns_record_type_aaaa_ratio", "dns_record_type_txt_ratio",
+    "dns_record_type_mx_ratio", "dns_query_count",
 )
 
 
@@ -378,9 +391,10 @@ def _dns_window_features(conn_features, dns_events):
                 for event in events_by_source.get(flow["src_ip"], [])
                 if 0.0 <= timestamp - event["ts"] <= WINDOW_SECONDS
             ]
-        queries = [event["query"] for event in events if event["query"]]
+        query_events = [event for event in events if event["query"]]
+        queries = [event["query"] for event in query_events]
         lengths = [len(query) for query in queries]
-        fractions = dns_record_type_fractions(event["qtype"] for event in events)
+        fractions = dns_record_type_fractions(event["qtype"] for event in query_events)
         rows.append(
             {
                 "uid": flow["uid"],
@@ -395,7 +409,9 @@ def _dns_window_features(conn_features, dns_events):
                     sum(subdomain_count(query) for query in queries) / len(queries) if queries else 0.0
                 ),
                 "dns_record_type_a_ratio": fractions["A"],
+                "dns_record_type_aaaa_ratio": fractions["AAAA"],
                 "dns_record_type_txt_ratio": fractions["TXT"],
+                "dns_record_type_mx_ratio": fractions["MX"],
                 "dns_query_count": len(queries),
             }
         )
@@ -550,7 +566,9 @@ ENRICHMENT_DEFAULTS = {
     "domain_length_max": 0.0,
     "subdomain_count": 0.0,
     "dns_record_type_a_ratio": 0.0,
+    "dns_record_type_aaaa_ratio": 0.0,
     "dns_record_type_txt_ratio": 0.0,
+    "dns_record_type_mx_ratio": 0.0,
     "dns_query_count": 0,
     "ja3_hash": "",
     "ja3s_hash": "",
