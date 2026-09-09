@@ -1,218 +1,284 @@
 """
-benign_traffic.py — Realistic benign traffic generator for Aegis lab.
+benign_traffic.py — Generate a realistic benign traffic PCAP for Aegis lab.
 
-Runs inside the benign container (10.10.0.4) and generates a mix of:
-  - iperf3 TCP throughput tests       → large bidirectional flows
-  - curl HTTP downloads               → short-to-medium TCP flows
-  - wget file fetches                 → medium TCP flows
-  - DNS lookups of real-looking names → normal DNS query pattern
+Works the same way as the new syn_flood.py:
+  - Builds packets in memory using Scapy
+  - Writes them directly to a PCAP file with wrpcap()
+  - No Docker, no live network needed
+  - Zeek replays the PCAP to produce conn.log / dns.log / ssl.log
+  - features/pipeline.py then reads those logs → benign.parquet
 
-The goal is to produce at least as many flows as the largest attack scenario
-so the training dataset is not heavily imbalanced toward attack traffic.
+Traffic mix (to produce ~1500+ flows):
+  - HTTP TCP connections  (SYN→data→FIN, short flows)
+  - DNS queries           (UDP port 53, realistic domain names)
+  - HTTPS TCP connections (SYN→data→FIN to port 443)
+  - SSH TCP connections   (SYN→data→FIN to port 22)
+  - Large TCP transfers   (iperf3-style, high byte volume both directions)
 
-Usage (inside benign container):
-    python3 /scripts/benign_traffic.py --target 10.10.0.3 --duration 300
+Why this mix matters for the model:
+  - HTTP/HTTPS gives normal TLS and non-TLS flows
+  - DNS gives normal low-entropy queries (contrast with DGA high-entropy)
+  - Large transfers give balanced orig_bytes/resp_bytes (contrast with exfiltration)
+  - Varied destinations give moderate fan_out (contrast with port_scan)
+  - Irregular timing gives high iat_std (contrast with c2_beaconing)
 
-Requirements (already in benign/Dockerfile):
-    iperf3, curl, wget
+Usage:
+    python3 benign_traffic.py --output data/raw/benign.pcap --flows 1500
+    python3 benign_traffic.py --output data/raw/benign.pcap --flows 2000 --seed 42
 """
 
+from __future__ import annotations
+
 import argparse
+import ipaddress
+import math
 import random
-import subprocess
-import time
+import string
+from pathlib import Path
 
+from scapy.all import IP, TCP, UDP, DNS, DNSQR, Raw, wrpcap
 
 # ---------------------------------------------------------------------------
-# Real-looking domain names for DNS lookups.
-# These are well-known public domains. The container has no internet access
-# (masquerade=false in docker-compose), so the lookups will fail to resolve
-# but will still generate DNS query traffic that Zeek logs as dns.log rows.
-# That is exactly what we want — realistic DNS query patterns.
+# Lab network constants — must match docker-compose.yml
 # ---------------------------------------------------------------------------
-DOMAINS = [
-    "github.com",
-    "google.com",
-    "stackoverflow.com",
-    "wikipedia.org",
-    "npmjs.com",
-    "pypi.org",
-    "microsoft.com",
-    "amazon.com",
-    "cloudflare.com",
-    "ubuntu.com",
-    "debian.org",
-    "docs.python.org",
-    "api.github.com",
-    "mail.google.com",
-    "login.microsoftonline.com",
-    "s3.amazonaws.com",
-    "cdn.jsdelivr.net",
-    "fonts.googleapis.com",
-    "accounts.google.com",
-    "auth.example.com",
+BENIGN_IP  = "10.10.0.4"   # source (benign container)
+VICTIM_IP  = "10.10.0.3"   # destination (victim container)
+DNS_SERVER = "10.10.0.3"   # victim also acts as DNS in lab
+
+# Real-looking domain names — low entropy, structured labels
+# Contrast with DGA domains which are random character strings
+BENIGN_DOMAINS = [
+    "github.com", "google.com", "stackoverflow.com", "wikipedia.org",
+    "npmjs.com", "pypi.org", "microsoft.com", "amazon.com",
+    "cloudflare.com", "ubuntu.com", "debian.org", "docs.python.org",
+    "api.github.com", "mail.google.com", "cdn.jsdelivr.net",
+    "fonts.googleapis.com", "accounts.google.com", "s3.amazonaws.com",
+    "login.microsoftonline.com", "registry.npmjs.org",
 ]
 
-# HTTP endpoints on the victim (10.10.0.3) — victim runs a plain TCP listener,
-# so curl will connect and disconnect cleanly, generating a conn.log row.
-HTTP_PATHS = ["/", "/index.html", "/api/v1/status", "/health", "/favicon.ico"]
+# Destination ports for different traffic types
+HTTP_PORT  = 80
+HTTPS_PORT = 443
+SSH_PORT   = 22
+DNS_PORT   = 53
 
 
-def run(cmd, timeout=30):
-    """Run a shell command, ignoring non-zero exit codes (expected for unreachable hosts)."""
-    try:
-        subprocess.run(
-            cmd,
-            shell=True,
-            timeout=timeout,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+# ---------------------------------------------------------------------------
+# Packet builders — each returns a list of Scapy packets for one flow
+# ---------------------------------------------------------------------------
+
+def _tcp_flow(src_ip, dst_ip, src_port, dst_port, payload_size, timestamp):
+    """
+    Build a minimal TCP flow: SYN → SYN-ACK → ACK → data → FIN.
+    Each call = one complete connection = one Zeek conn.log row.
+    """
+    payload = b"X" * payload_size
+    pkts = [
+        IP(src=src_ip, dst=dst_ip) / TCP(sport=src_port, dport=dst_port, flags="S"),
+        IP(src=dst_ip, dst=src_ip) / TCP(sport=dst_port, dport=src_port, flags="SA"),
+        IP(src=src_ip, dst=dst_ip) / TCP(sport=src_port, dport=dst_port, flags="A"),
+        IP(src=src_ip, dst=dst_ip) / TCP(sport=src_port, dport=dst_port, flags="PA") / Raw(load=payload),
+        # Response from server — gives resp_bytes > 0 (contrast with SYN flood)
+        IP(src=dst_ip, dst=src_ip) / TCP(sport=dst_port, dport=src_port, flags="PA") / Raw(load=b"Y" * (payload_size // 2)),
+        IP(src=src_ip, dst=dst_ip) / TCP(sport=src_port, dport=dst_port, flags="FA"),
+        IP(src=dst_ip, dst=src_ip) / TCP(sport=dst_port, dport=src_port, flags="FA"),
+    ]
+    for i, pkt in enumerate(pkts):
+        pkt.time = timestamp + i * 0.001
+    return pkts
+
+
+def _dns_query(src_ip, dns_server, src_port, domain, timestamp):
+    """
+    Build a DNS query + response pair.
+    One query = one Zeek dns.log row with low-entropy domain name.
+    """
+    pkts = [
+        IP(src=src_ip, dst=dns_server) / UDP(sport=src_port, dport=DNS_PORT) /
+        DNS(rd=1, qd=DNSQR(qname=domain)),
+        # Fake A-record response
+        IP(src=dns_server, dst=src_ip) / UDP(sport=DNS_PORT, dport=src_port) /
+        DNS(qr=1, rd=1, ra=1, qd=DNSQR(qname=domain)),
+    ]
+    pkts[0].time = timestamp
+    pkts[1].time = timestamp + 0.002
+    return pkts
+
+
+def _large_transfer(src_ip, dst_ip, src_port, dst_port, orig_bytes, resp_bytes, timestamp):
+    """
+    Simulate an iperf3-style bulk transfer.
+    High bytes in BOTH directions — balanced outbound_inbound_ratio ≈ 1.
+    Contrast with exfiltration which has resp_bytes ≈ 0.
+    """
+    chunk = 1400  # MTU-ish
+    pkts = []
+    t = timestamp
+
+    # Handshake
+    pkts.append(IP(src=src_ip, dst=dst_ip) / TCP(sport=src_port, dport=dst_port, flags="S"))
+    pkts[-1].time = t; t += 0.001
+    pkts.append(IP(src=dst_ip, dst=src_ip) / TCP(sport=dst_port, dport=src_port, flags="SA"))
+    pkts[-1].time = t; t += 0.001
+
+    # Outbound data
+    for _ in range(math.ceil(orig_bytes / chunk)):
+        pkts.append(
+            IP(src=src_ip, dst=dst_ip) / TCP(sport=src_port, dport=dst_port, flags="PA") /
+            Raw(load=b"O" * min(chunk, orig_bytes))
         )
-    except subprocess.TimeoutExpired:
-        pass
-    except Exception:
-        pass
+        pkts[-1].time = t; t += 0.0005
+
+    # Inbound response — meaningful volume
+    for _ in range(math.ceil(resp_bytes / chunk)):
+        pkts.append(
+            IP(src=dst_ip, dst=src_ip) / TCP(sport=dst_port, dport=src_port, flags="PA") /
+            Raw(load=b"I" * min(chunk, resp_bytes))
+        )
+        pkts[-1].time = t; t += 0.0005
+
+    # Teardown
+    pkts.append(IP(src=src_ip, dst=dst_ip) / TCP(sport=src_port, dport=dst_port, flags="FA"))
+    pkts[-1].time = t
+    return pkts
 
 
-def dns_lookup(domain):
+# ---------------------------------------------------------------------------
+# Main generator
+# ---------------------------------------------------------------------------
+
+def generate_benign_pcap(
+    n_flows:   int  = 1500,
+    seed:      int  = 42,
+    output:    str  = "data/raw/benign.pcap",
+    src_ip:    str  = BENIGN_IP,
+    dst_ip:    str  = VICTIM_IP,
+):
     """
-    Issue a DNS query using the system resolver.
-    Uses 'nslookup' which is available on debian:bookworm-slim without extras.
-    Even a failed lookup (NXDOMAIN, timeout) produces a dns.log row in Zeek.
+    Generate a PCAP with n_flows benign flows.
+
+    Flow type distribution (approximate):
+        40%  HTTP  flows  (TCP port 80,  small payload)
+        25%  HTTPS flows  (TCP port 443, small payload)
+        20%  DNS   flows  (UDP port 53,  real-looking domains)
+        10%  Large TCP transfers (iperf3-style, balanced bytes)
+         5%  SSH   flows  (TCP port 22)
+
+    Timing: flows are spread across a 600-second window with random
+    inter-arrival times, matching realistic background traffic patterns.
+    IAT is irregular (iat_std is high) — contrast with c2_beaconing.
     """
-    run(f"nslookup {domain}", timeout=5)
+    rng = random.Random(seed)
+    all_packets = []
+
+    # Spread flows across 600 seconds with jittered IAT
+    # Mean IAT ≈ 0.4s, std ≈ 0.3s — irregular, realistic
+    current_time = 0.0
+    src_port_counter = 1024
+
+    def next_port():
+        nonlocal src_port_counter
+        p = src_port_counter
+        src_port_counter = (src_port_counter % 64511) + 1024
+        return p
+
+    # Assign flow types
+    flow_types = rng.choices(
+        ["http", "https", "dns", "transfer", "ssh"],
+        weights=[40, 25, 20, 10, 5],
+        k=n_flows,
+    )
+
+    for flow_type in flow_types:
+        # Irregular inter-arrival time — high iat_std is the benign signal
+        iat = max(0.05, rng.gauss(0.4, 0.3))
+        current_time += iat
+
+        sport = next_port()
+
+        if flow_type == "http":
+            payload = rng.randint(200, 8000)
+            pkts = _tcp_flow(src_ip, dst_ip, sport, HTTP_PORT, payload, current_time)
+
+        elif flow_type == "https":
+            payload = rng.randint(500, 15000)
+            pkts = _tcp_flow(src_ip, dst_ip, sport, HTTPS_PORT, payload, current_time)
+
+        elif flow_type == "dns":
+            domain = rng.choice(BENIGN_DOMAINS)
+            # Occasionally add www. prefix — realistic subdomain pattern
+            if rng.random() < 0.3:
+                prefix = rng.choice(["www", "api", "cdn", "static"])
+                domain = f"{prefix}.{domain}"
+            pkts = _dns_query(src_ip, dst_ip, sport, domain, current_time)
+
+        elif flow_type == "transfer":
+            orig_b = rng.randint(50000, 500000)
+            resp_b = rng.randint(40000, 400000)   # balanced both directions
+            pkts = _large_transfer(src_ip, dst_ip, sport, HTTP_PORT, orig_b, resp_b, current_time)
+            current_time += 2.0   # transfers take longer
+
+        else:  # ssh
+            payload = rng.randint(100, 2000)
+            pkts = _tcp_flow(src_ip, dst_ip, sport, SSH_PORT, payload, current_time)
+
+        all_packets.extend(pkts)
+
+    # Sort by timestamp before writing — Zeek requires chronological order
+    all_packets.sort(key=lambda p: float(p.time))
+
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+    wrpcap(output, all_packets)
+    print(f"Wrote {len(all_packets)} packets ({n_flows} flows) to {output}")
+    return output
 
 
-def http_download(target, path):
-    """
-    Attempt an HTTP GET to the victim.
-    curl -s -m 5 suppresses output and gives up after 5 seconds.
-    Generates a TCP flow even if the server returns an error or refuses.
-    """
-    run(f"curl -s -m 5 http://{target}{path}", timeout=8)
-
-
-def wget_fetch(target, path):
-    """
-    Attempt a file fetch with wget.
-    --tries=1 avoids retry loops. -q suppresses output.
-    Generates a distinct TCP flow from the curl flows — different user-agent
-    signature means different JA3-like fingerprint characteristics.
-    """
-    run(f"wget -q --tries=1 -T 5 -O /dev/null http://{target}{path}", timeout=8)
-
-
-def iperf3_test(target, duration=5, port=5201):
-    """
-    Run a short iperf3 throughput test against the victim.
-    Generates a large bidirectional flow — high orig_bytes AND resp_bytes.
-    This is the main source of high-volume benign flows to counterbalance
-    the exfiltration scenario which has high orig_bytes only.
-
-    The victim container does not run iperf3 server, so this will fail to
-    connect — but the TCP SYN + RST exchange still produces a conn.log row
-    with a real flow record. For a more complete test, add iperf3 -s to the
-    victim Dockerfile CMD.
-    """
-    run(f"iperf3 -c {target} -p {port} -t {duration} --json", timeout=duration + 10)
-
-
-def generate_traffic(target, duration_seconds, seed=None):
-    """
-    Main loop: randomly mix traffic types for the requested duration.
-
-    The mix is weighted so:
-    - DNS lookups are frequent (every ~2-4 seconds) — realistic background noise
-    - HTTP/wget are moderate (every ~5-10 seconds)
-    - iperf3 tests are occasional (every ~30-60 seconds) — large flows
-
-    Args:
-        target:           IP address of the victim container.
-        duration_seconds: How long to generate traffic (seconds).
-        seed:             Optional random seed for reproducibility.
-    """
-    if seed is not None:
-        random.seed(seed)
-
-    end_time = time.monotonic() + duration_seconds
-    flow_count = 0
-
-    print(f"[benign_traffic] Starting benign traffic to {target} for {duration_seconds}s.")
-
-    while time.monotonic() < end_time:
-        # Weighted action selection:
-        #   40% DNS lookup
-        #   25% HTTP curl
-        #   20% wget fetch
-        #   15% iperf3 test
-        action = random.choices(
-            ["dns", "http", "wget", "iperf3"],
-            weights=[40, 25, 20, 15],
-            k=1,
-        )[0]
-
-        if action == "dns":
-            domain = random.choice(DOMAINS)
-            dns_lookup(domain)
-            # Extra: sometimes do a subdomain lookup to simulate realistic
-            # multi-label DNS activity (not DGA — these are structured names)
-            if random.random() < 0.3:
-                subdomain = random.choice(["www", "api", "cdn", "static", "mail"])
-                dns_lookup(f"{subdomain}.{domain}")
-            time.sleep(random.uniform(1.5, 4.0))
-
-        elif action == "http":
-            path = random.choice(HTTP_PATHS)
-            http_download(target, path)
-            time.sleep(random.uniform(3.0, 8.0))
-
-        elif action == "wget":
-            path = random.choice(HTTP_PATHS)
-            wget_fetch(target, path)
-            time.sleep(random.uniform(4.0, 10.0))
-
-        elif action == "iperf3":
-            # Short iperf3 test — 3-8 seconds duration
-            test_duration = random.randint(3, 8)
-            iperf3_test(target, duration=test_duration)
-            # Sleep longer after iperf3 to avoid flooding
-            time.sleep(random.uniform(20.0, 45.0))
-
-        flow_count += 1
-
-    print(f"[benign_traffic] Done. Generated approximately {flow_count} traffic events.")
-
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate realistic benign network traffic for Aegis lab capture."
+        description="Generate a realistic benign traffic PCAP for Aegis lab."
     )
     parser.add_argument(
-        "--target",
-        default="10.10.0.3",
-        help="IP address of the victim container (default: 10.10.0.3)",
+        "--output",
+        default="data/raw/benign.pcap",
+        help="Output PCAP path (default: data/raw/benign.pcap)",
     )
     parser.add_argument(
-        "--duration",
+        "--flows",
         type=int,
-        default=300,
-        help="Traffic generation duration in seconds (default: 300)",
+        default=1500,
+        help="Number of flows to generate (default: 1500)",
     )
     parser.add_argument(
         "--seed",
         type=int,
-        default=None,
-        help="Random seed for reproducible traffic patterns (optional)",
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
+    )
+    parser.add_argument(
+        "--src-ip",
+        default=BENIGN_IP,
+        help=f"Source IP (default: {BENIGN_IP})",
+    )
+    parser.add_argument(
+        "--dst-ip",
+        default=VICTIM_IP,
+        help=f"Destination IP (default: {VICTIM_IP})",
     )
     args = parser.parse_args()
 
-    if args.duration <= 0:
-        parser.error("--duration must be greater than zero")
+    if args.flows <= 0:
+        parser.error("--flows must be greater than zero")
 
-    generate_traffic(
-        target=args.target,
-        duration_seconds=args.duration,
+    generate_benign_pcap(
+        n_flows=args.flows,
         seed=args.seed,
+        output=args.output,
+        src_ip=args.src_ip,
+        dst_ip=args.dst_ip,
     )
 
 

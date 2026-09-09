@@ -5,7 +5,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget\
     python3\
-    && rm -rf /var/lib/apt/lists/*
+    python3-pip\
+    dnsutils\
+    netcat-openbsd\
+    && rm -rf /var/lib/apt/lists/*\
+    && pip3 install --break-system-packages scapy
 
 WORKDIR /scripts
 

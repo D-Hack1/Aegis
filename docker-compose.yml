@@ -50,9 +50,10 @@ services:
         ipv4_address: 10.10.0.4
     volumes:
       - ./benign/scripts:/scripts:z
-
+  
   zeek:
-    image: zeek/zeek:6.0.3
+    build:
+      context: ./zeek
     container_name: zeek
     networks:
       labnet:
