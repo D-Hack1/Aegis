@@ -1,7 +1,7 @@
 import argparse
 import ipaddress
+import math
 import random
-import time
 
 from scapy.all import IP, UDP, Raw, wrpcap
 
@@ -30,10 +30,10 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Generate a UDP flood PCAP with spoofed source addresses.")
     parser.add_argument("--target", default="10.10.0.3", help="Target IPv4 address")
     parser.add_argument("--port", type=int, default=53, help="Target UDP port (53 or 80)")
-    parser.add_argument("--pps", type=int, default=100, help="Packets per second")
+    parser.add_argument("--pps", type=int, default=150, help="Packets per second")
     parser.add_argument("--duration", type=float, default=10, help="Flood duration in seconds")
     parser.add_argument("--payload-size", type=int, default=1200, help="UDP payload size in bytes")
-    parser.add_argument("--spoof-pool-size", type=int, default=200, help="Number of spoofed source identities (IP:port pairs) to rotate through")
+    parser.add_argument("--spoof-pool-size", type=int, default=1500, help="Number of spoofed source identities (IP:port pairs) to rotate through")
     parser.add_argument("--output", default="data/raw/udp_flood_candidate.pcap", help="Output PCAP file")
     args = parser.parse_args(argv)
 
@@ -58,18 +58,13 @@ def parse_args(argv=None):
 def build_packets(target, port, pps, duration, payload, spoof_pool):
     interval = 1 / pps
     packets = []
-    current_time = 0.0
-    sent = 0
-
-    while current_time < duration:
+    for sent in range(math.ceil(pps * duration)):
         src_ip, src_port = spoof_pool[sent % len(spoof_pool)]
         packet = IP(src=src_ip, dst=target) / UDP(
             sport=src_port, dport=port
         ) / Raw(load=payload)
-        packet.time = current_time
+        packet.time = sent * interval
         packets.append(packet)
-        sent += 1
-        current_time += interval
     return packets
 
 

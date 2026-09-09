@@ -11,10 +11,11 @@ def _spoof_pool(size):
     ]
 
 
-def test_default_cli_uses_two_hundred_spoofed_flow_identities():
+def test_default_cli_uses_fifteen_hundred_spoofed_flow_identities():
     args = udp_flood.parse_args([])
 
-    assert args.spoof_pool_size == 200
+    assert args.spoof_pool_size == 1500
+    assert args.pps == 150
     assert args.target == "10.10.0.3"
     assert args.port == 53
 
@@ -36,15 +37,17 @@ def test_spoof_pool_rejects_duplicate_identity_pairs(monkeypatch):
 
 
 def test_packets_cycle_stable_spoofed_flows_without_changing_destination():
-    pool = _spoof_pool(200)
-    packets = udp_flood.build_packets("10.10.0.3", 53, 256, 1, b"x", pool)
+    pool = _spoof_pool(1500)
+    packets = udp_flood.build_packets("10.10.0.3", 53, 1500, 1, b"x", pool)
     identities = {(packet[IP].src, packet[UDP].sport) for packet in packets}
+    tuples = {
+        (packet[IP].src, packet[UDP].sport, packet[IP].dst, packet[UDP].dport, "udp")
+        for packet in packets
+    }
 
-    assert len(identities) == 200
+    assert len(identities) == 1500
+    assert len(tuples) == 1500
     assert all(packet[IP].dst == "10.10.0.3" for packet in packets)
     assert all(packet[UDP].dport == 53 for packet in packets)
     assert all(packet[IP].src != "10.10.0.3" for packet in packets)
-    assert (packets[0][IP].src, packets[0][UDP].sport) == (
-        packets[200][IP].src,
-        packets[200][UDP].sport,
-    )
+    assert len(packets) == 1500
