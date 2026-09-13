@@ -47,13 +47,16 @@ class FeatureRow:
     domain_length_max: float        # Max domain name length from this src in window
     subdomain_count: float          # Mean number of labels in FQDN
     dns_record_type_a_ratio: float  # Fraction of queries that are A records
+    dns_record_type_aaaa_ratio: float
     dns_record_type_txt_ratio: float  # Fraction of queries that are TXT (tunnelling signal)
+    dns_record_type_mx_ratio: float
     dns_query_count: int            # Total DNS queries from this src in window
 
     # TLS / JA3 features  (from ssl.log)
     ja3_hash: str                   # JA3 fingerprint hash (empty string if not TLS)
     ja3s_hash: str                  # JA3S fingerprint hash (empty string if not TLS)
     tls_version: float              # Ordinal: TLS1.0=1.0, 1.1=2.0, 1.2=3.0, 1.3=4.0, 0=not TLS
+    cipher_suite: str
     cipher_suite_enc: int           # Frequency-encoded cipher suite (top-50, rest=0)
     is_tls: bool                    # True if this flow has a TLS session
 
@@ -156,6 +159,7 @@ ID_COLUMNS: list[str] = [
 # String/hash columns that need encoding before model input
 ENCODE_COLUMNS: list[str] = [
     "ja4_hash",   # Durable raw value → ja4_hash_enc during model preprocessing
+    "cipher_suite",
 ]
 
 # Boolean columns — ensure these are cast to int (0/1) before model input
@@ -173,7 +177,9 @@ FILL_ZERO_COLUMNS: list[str] = [
     "domain_length_max",
     "subdomain_count",
     "dns_record_type_a_ratio",
+    "dns_record_type_aaaa_ratio",
     "dns_record_type_txt_ratio",
+    "dns_record_type_mx_ratio",
     "dns_query_count",
     "tls_version",
     "cipher_suite_enc",
@@ -205,12 +211,15 @@ def from_dict(d: dict) -> FeatureRow:
         "quic_pkt_size_mean": 0.0,
         "quic_pkt_size_std": 0.0,
         "ja4_hash": "",
+        "cipher_suite": "",
         "dns_query_entropy": 0.0,
         "domain_length_mean": 0.0,
         "domain_length_max": 0.0,
         "subdomain_count": 0.0,
         "dns_record_type_a_ratio": 0.0,
+        "dns_record_type_aaaa_ratio": 0.0,
         "dns_record_type_txt_ratio": 0.0,
+        "dns_record_type_mx_ratio": 0.0,
         "dns_query_count": 0,
         "iat_std": 0.0,
         "iat_min": 0.0,
