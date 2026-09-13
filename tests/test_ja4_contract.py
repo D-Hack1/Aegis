@@ -33,7 +33,10 @@ def _raw_row(ja4_hash, uid="C1"):
         "connection_frequency": 1.0,
         "src_ip_entropy": 0.0,
         "periodicity_score": 0.0,
+        "dns_record_type_aaaa_ratio": 0.25,
+        "dns_record_type_mx_ratio": 0.5,
         "ja4_hash": ja4_hash,
+        "cipher_suite": "TLS_AES_128_GCM_SHA256",
         # Normalization must discard model-only input fields from durable output.
         "ja4_hash_enc": 999,
     }
@@ -56,6 +59,22 @@ def test_raw_ja4_is_durable_and_encoded_ja4_is_model_only():
     assert "ja4_hash_enc" not in normalized.columns
 
 
+def test_raw_dns_ratios_and_cipher_suite_are_durable_in_schema_order():
+    normalized = _normalized_rows("KNOWN_HASH")
+
+    assert list(SCHEMA_COLUMNS).index("dns_record_type_a_ratio") < list(SCHEMA_COLUMNS).index(
+        "dns_record_type_aaaa_ratio"
+    ) < list(SCHEMA_COLUMNS).index("dns_record_type_txt_ratio") < list(SCHEMA_COLUMNS).index(
+        "dns_record_type_mx_ratio"
+    )
+    assert list(SCHEMA_COLUMNS).index("tls_version") < list(SCHEMA_COLUMNS).index(
+        "cipher_suite"
+    ) < list(SCHEMA_COLUMNS).index("cipher_suite_enc")
+    assert normalized.loc[0, "dns_record_type_aaaa_ratio"] == 0.25
+    assert normalized.loc[0, "dns_record_type_mx_ratio"] == 0.5
+    assert normalized.loc[0, "cipher_suite"] == "TLS_AES_128_GCM_SHA256"
+
+
 def test_parquet_round_trip_preserves_raw_ja4_only(tmp_path):
     pytest.importorskip("pyarrow", reason="Parquet round-trip requires the project Parquet engine")
     normalized = _normalized_rows("KNOWN_HASH")
@@ -64,6 +83,9 @@ def test_parquet_round_trip_preserves_raw_ja4_only(tmp_path):
     stored = pd.read_parquet(output_path)
 
     assert stored.loc[0, "ja4_hash"] == "KNOWN_HASH"
+    assert stored.loc[0, "dns_record_type_aaaa_ratio"] == 0.25
+    assert stored.loc[0, "dns_record_type_mx_ratio"] == 0.5
+    assert stored.loc[0, "cipher_suite"] == "TLS_AES_128_GCM_SHA256"
     assert "ja4_hash_enc" not in stored.columns
 
 

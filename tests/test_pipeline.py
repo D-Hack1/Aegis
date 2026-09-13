@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 
 from features.pipeline import _parse_required_int, compute_conn_features, read_zeek_conn_log
@@ -66,3 +67,20 @@ def test_malformed_required_conn_integer_is_rejected(tmp_path):
 
     with pytest.raises(ValueError, match="invalid required integer field: orig_bytes"):
         compute_conn_features(conn_log)
+
+
+def test_periodicity_uses_only_source_timestamps_in_the_rolling_window():
+    rows = [
+        {
+            "uid": f"C{index}", "ts": timestamp, "id.orig_h": "192.0.2.10",
+            "id.orig_p": 50000 + index, "id.resp_h": "198.51.100.25",
+            "id.resp_p": 443, "proto": "tcp", "duration": 1.0,
+            "orig_bytes": 128, "resp_bytes": 64, "orig_pkts": 2, "resp_pkts": 1,
+        }
+        for index, timestamp in enumerate((0.0, 1.0, 120.0, 130.0, 150.0))
+    ]
+
+    features = compute_conn_features(pd.DataFrame(rows))
+
+    assert features.loc[2, "periodicity_score"] == 0.0
+    assert features.loc[4, "periodicity_score"] == pytest.approx(0.2)

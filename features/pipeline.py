@@ -224,7 +224,13 @@ def compute_conn_features(conn_log):
 
         source_window.append((timestamp, destination_ip, destination_port))
         destination_window.append((timestamp, source_ip))
-        iat_mean, iat_std, iat_min, iat_max, periodicity_score = _iat_features(source_iats[source_ip])
+        iat_mean, iat_std, iat_min, iat_max, _ = _iat_features(source_iats[source_ip])
+        rolling_timestamps = [entry[0] for entry in source_window]
+        rolling_iats = [
+            current - previous
+            for previous, current in zip(rolling_timestamps, rolling_timestamps[1:])
+        ]
+        periodicity_score = _iat_features(rolling_iats)[4]
 
         duration = record["duration"]
         orig_bytes = record["orig_bytes"]
@@ -617,7 +623,10 @@ def enrich_conn_features(conn_features, dns_features=None, tls_features=None, qu
 # Durable event schema: raw JA4 is retained; model-only encoded columns are excluded.
 SCHEMA_COLUMNS = tuple(FeatureRow.__dataclass_fields__)
 SCHEMA_DEFAULTS = {**ENRICHMENT_DEFAULTS, "cipher_suite_enc": 0, "label": None}
-STRING_SCHEMA_FIELDS = {"flow_id", "src_ip", "dst_ip", "protocol", "ja3_hash", "ja3s_hash", "ja4_hash"}
+STRING_SCHEMA_FIELDS = {
+    "flow_id", "src_ip", "dst_ip", "protocol", "ja3_hash", "ja3s_hash", "ja4_hash",
+    "cipher_suite",
+}
 INT_SCHEMA_FIELDS = {
     "src_port",
     "dst_port",
