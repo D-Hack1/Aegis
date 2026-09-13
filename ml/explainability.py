@@ -199,3 +199,25 @@ class ThreatExplainer:
         if not np.isfinite(vector).all():
             raise ValueError("SHAP output contains NaN or infinity")
         return vector
+
+
+_configured_explainer = None
+
+
+def configure_explainer(model, class_mapping=None, feature_names=None, explainer=None):
+    global _configured_explainer
+    _configured_explainer = ThreatExplainer(
+        model,
+        feature_names=feature_names,
+        class_mapping=class_mapping,
+        explainer=explainer,
+    )
+
+
+def explain(feature_row, threat_class):
+    if _configured_explainer is None:
+        raise RuntimeError("SHAP explainer has not been configured")
+    return [
+        format_evidence(evidence)
+        for evidence in _configured_explainer.explain(feature_row, threat_class=threat_class)
+    ]

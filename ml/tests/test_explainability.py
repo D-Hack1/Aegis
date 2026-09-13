@@ -5,7 +5,15 @@ import pandas as pd
 import pytest
 
 from features.schema import FEATURE_COLUMNS
-from ml.explainability import FEATURE_LABELS, ThreatExplainer, feature_label, format_evidence
+import ml.explainability as explainability
+from ml.explainability import (
+    FEATURE_LABELS,
+    ThreatExplainer,
+    configure_explainer,
+    explain,
+    feature_label,
+    format_evidence,
+)
 
 
 class FakeExplainer:
@@ -95,6 +103,33 @@ def test_structured_and_human_readable_evidence():
     assert "QUIC traffic detected" in format_evidence(evidence)
 
 
+def test_module_explain_requires_configuration(monkeypatch):
+    monkeypatch.setattr(explainability, "_configured_explainer", None)
+
+    with pytest.raises(RuntimeError, match="has not been configured"):
+        explain(feature_row(), "ddos")
+
+
+def test_module_explain_returns_top_five_human_readable_strings(monkeypatch):
+    monkeypatch.setattr(explainability, "_configured_explainer", None)
+    values = np.zeros(len(FEATURE_COLUMNS))
+    values[:6] = [5.0, -4.0, 3.0, -2.0, 1.0, 0.5]
+    configure_explainer(
+        object(), class_mapping={"ddos": 0}, explainer=FakeExplainer(values)
+    )
+
+    evidence = explain(feature_row(), "ddos")
+
+    assert len(evidence) == 5
+    assert evidence == [
+        "High packet rate: 1 (supports prediction)",
+        "High traffic volume: 2 (opposes prediction)",
+        "High outbound traffic ratio: 3 (supports prediction)",
+        "Large originator byte volume: 4 (opposes prediction)",
+        "Large responder byte volume: 5 (supports prediction)",
+    ]
+
+
 def test_dataframe_duplicate_columns_and_nonfinite_shap_are_rejected():
     row = feature_row()
     duplicate = pd.DataFrame([[*row.values(), 1]], columns=[*FEATURE_COLUMNS, FEATURE_COLUMNS[0]])
@@ -106,8 +141,8 @@ def test_dataframe_duplicate_columns_and_nonfinite_shap_are_rejected():
         ThreatExplainer(object(), explainer=FakeExplainer(np.full(len(FEATURE_COLUMNS), np.nan))).explain(row)
 
 
-def test_all_six_attack_classes_use_test_only_multiclass_mapping():
-    attack_classes = ["syn_flood", "udp_flood", "port_scan", "c2_beacon", "dns_anomaly", "data_exfil"]
+def test_all_six_production_attack_classes_select_multiclass_vectors():
+    attack_classes = ["ddos", "c2_beaconing", "dns_anomaly", "malware_tls", "port_scan", "exfiltration"]
     class_mapping = {name: index for index, name in enumerate(attack_classes)}
     class_values = np.zeros((1, len(FEATURE_COLUMNS), len(attack_classes)))
     for index in range(len(attack_classes)):
