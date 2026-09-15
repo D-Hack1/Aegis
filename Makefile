@@ -31,3 +31,6 @@ health:
 	docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list
 	python3 kafka/health_check.py
 	python3 es/health_check.py
+
+demo:
+	python3 demo.py
