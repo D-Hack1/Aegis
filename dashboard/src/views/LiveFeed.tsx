@@ -35,13 +35,13 @@ export const LiveFeed: React.FC = () => {
             Real-time threat detection from Zeek & Kafka pipeline
           </p>
         </div>
-        
+
         <div className="flex gap-4 items-center">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
-            <input 
-              type="text" 
-              placeholder="Search IPs..." 
+            <input
+              type="text"
+              placeholder="Search IPs..."
               className="bg-zinc-900 border border-zinc-700 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-sky-500 transition-colors text-zinc-200"
             />
           </div>
@@ -76,7 +76,7 @@ export const LiveFeed: React.FC = () => {
         ) : (
           <div className="flex flex-col gap-4">
             {data.results.map((alert: Alert, index) => (
-              <div 
+              <div
                 key={alert.id}
                 onClick={() => setSelectedAlert(alert)}
                 className={`panel p-5 cursor-pointer flex items-center justify-between group animate-fade-in-up hover:glow-${alert.severity}`}
@@ -89,7 +89,7 @@ export const LiveFeed: React.FC = () => {
                       {new Date(alert.timestamp).toLocaleTimeString()}
                     </span>
                   </div>
-                  
+
                   <div className="flex items-center gap-3 min-w-[280px]">
                     <div className="text-right">
                       <div className="font-mono text-amber-500 font-bold">{alert.src_ip}</div>
@@ -106,14 +106,14 @@ export const LiveFeed: React.FC = () => {
 
                   <ThreatClassBadge threatClass={alert.threat_class} />
                 </div>
-                
+
                 <div className="flex items-center gap-8">
                   <div className="flex flex-col items-end">
                     <span className="text-xs text-zinc-500 font-mono mb-1">CONFIDENCE</span>
                     <div className="flex items-center gap-2">
                       <div className="w-16 bg-zinc-950 rounded-full h-1.5">
-                        <div 
-                          className="bg-sky-500 h-1.5 rounded-full" 
+                        <div
+                          className="bg-sky-500 h-1.5 rounded-full"
                           style={{ width: `${alert.confidence * 100}%` }}
                         ></div>
                       </div>
@@ -128,9 +128,9 @@ export const LiveFeed: React.FC = () => {
         )}
       </div>
 
-      <AlertSidePanel 
-        alert={selectedAlert} 
-        onClose={() => setSelectedAlert(null)} 
+      <AlertSidePanel
+        alert={selectedAlert}
+        onClose={() => setSelectedAlert(null)}
       />
     </div>
   );
