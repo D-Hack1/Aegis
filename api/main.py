@@ -47,6 +47,7 @@ from aiokafka import AIOKafkaConsumer
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from features.schema import FEATURE_COLUMNS, BOOL_COLUMNS, FILL_ZERO_COLUMNS
+from ml.explainability import configure_explainer
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -113,9 +114,17 @@ async def lifespan(app: FastAPI):
     # --- Load XGBoost model ---
     if Path(MODEL_PATH).exists():
         try:
-            state.xgb_model   = joblib.load(MODEL_PATH)
+            state.xgb_model = joblib.load(MODEL_PATH)
             state.model_loaded = True
             logger.info("XGBoost model loaded from %s", MODEL_PATH)
+
+            # Configure SHAP explainer using the loaded XGBoost model
+            configure_explainer(
+                state.xgb_model,
+                class_mapping={name: i for i, name in enumerate(THREAT_CLASSES)}
+            )
+
+            logger.info("SHAP explainer configured")
         except Exception as e:
             logger.critical("Failed to load XGBoost model: %s", e)
             raise RuntimeError(f"Cannot start — model load failed: {e}")
@@ -126,7 +135,8 @@ async def lifespan(app: FastAPI):
     # --- Load Isolation Forest ---
     if Path(ISO_FOREST_PATH).exists():
         try:
-            state.iso_forest        = joblib.load(ISO_FOREST_PATH)
+            iso_data = joblib.load(ISO_FOREST_PATH)
+            state.iso_forest = iso_data["model"]
             state.iso_forest_loaded = True
             logger.info("Isolation Forest loaded from %s", ISO_FOREST_PATH)
         except Exception as e:
