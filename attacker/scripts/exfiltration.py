@@ -1,40 +1,50 @@
+
 #!/usr/bin/env python3
 
 """
 Aegis — Synthetic Exfiltration PCAP Generator
 
-Generates an offline synthetic dataset containing exactly --flows
-distinct network flows.
+Generates synthetic TCP-based exfiltration traffic for ML/Zeek
+feature extraction.
+
+IMPORTANT:
+    - Exactly --flows network flows are generated.
+    - ALL generated flows are exfiltration.
+    - No benign traffic is generated.
+    - Payloads are synthetic random bytes only.
+    - No real files, credentials, documents, databases, or system data
+      are accessed.
+
+Traffic characteristics:
+    - TCP only
+    - Client -> server carries the majority of the data
+    - Server -> client sends small response payloads
+    - High outbound/inbound byte ratio
+    - resp_bytes > 0
+    - Long-lived connections
+    - Variable transfer rates
+    - Bursty and irregular timing
+    - Multiple exfiltration profiles
 
 Profiles:
-    Anomalous-like:
-        - slow exfiltration
-        - low-volume exfiltration
-        - medium bursts
-        - high-volume bursts
-        - irregular transfers
-
-    Benign:
-        - large uploads
-        - large downloads
-        - backup-style transfers
-        - normal application transfers
-
-No real files, credentials, documents, databases, or system data
-are accessed. Payloads are synthetic bytes only.
+    - slow_exfil
+    - low_volume_exfil
+    - medium_burst
+    - high_burst
+    - irregular_exfil
 
 Default:
     1500 flows
 
 Example:
 
-python3 /scripts/exfiltration.py \
-    --dst 10.10.0.3 \
-    --src 10.10.0.2 \
-    --port 443 \
-    --flows 1500 \
-    --seed 42 \
-    --output /pcaps/exfiltration.pcap
+    python3 /scripts/exfiltration.py \
+        --dst 10.10.0.3 \
+        --src 10.10.0.2 \
+        --port 443 \
+        --flows 1500 \
+        --seed 42 \
+        --output /pcaps/exfiltration.pcap
 """
 
 from __future__ import annotations
@@ -44,7 +54,7 @@ import random
 from collections import Counter
 from pathlib import Path
 
-from scapy.all import IP, TCP, UDP, Raw, wrpcap
+from scapy.all import IP, TCP, Raw, wrpcap
 
 
 # ============================================================================
@@ -58,12 +68,12 @@ DEFAULT_DESTINATION_PORT = 443
 DEFAULT_FLOW_COUNT = 1500
 DEFAULT_SEED = 42
 
-# IMPORTANT:
-# Do NOT name these TCP / UDP because those names are already occupied
-# by Scapy's TCP and UDP packet classes imported above.
-
 PROTO_TCP = "tcp"
-PROTO_UDP = "udp"
+
+
+# ============================================================================
+# EXFILTRATION PROFILES
+# ============================================================================
 
 PROFILES = [
     "slow_exfil",
@@ -71,22 +81,14 @@ PROFILES = [
     "medium_burst",
     "high_burst",
     "irregular_exfil",
-    "benign_upload",
-    "benign_download",
-    "benign_backup",
-    "benign_application",
 ]
 
 PROFILE_WEIGHTS = [
-    0.10,  # slow_exfil
-    0.10,  # low_volume_exfil
-    0.12,  # medium_burst
-    0.10,  # high_burst
-    0.08,  # irregular_exfil
-    0.15,  # benign_upload
-    0.10,  # benign_download
-    0.10,  # benign_backup
-    0.15,  # benign_application
+    0.20,
+    0.20,
+    0.20,
+    0.20,
+    0.20,
 ]
 
 
@@ -102,9 +104,6 @@ def tcp_handshake(
     client_seq: int,
     server_seq: int,
 ) -> list:
-    """
-    Generate a synthetic TCP three-way handshake.
-    """
 
     packets = []
 
@@ -175,13 +174,10 @@ def tcp_teardown(
     client_seq: int,
     server_seq: int,
 ) -> list:
-    """
-    Generate a synthetic TCP FIN teardown.
-    """
 
     packets = []
 
-    fin_ack = (
+    fin = (
         IP(
             src=source_ip,
             dst=destination_ip,
@@ -196,7 +192,7 @@ def tcp_teardown(
         )
     )
 
-    server_ack = (
+    ack = (
         IP(
             src=destination_ip,
             dst=source_ip,
@@ -243,8 +239,8 @@ def tcp_teardown(
 
     packets.extend(
         [
-            fin_ack,
-            server_ack,
+            fin,
+            ack,
             server_fin,
             final_ack,
         ]
@@ -260,9 +256,6 @@ def tcp_teardown(
 def choose_profile(
     rng: random.Random,
 ) -> str:
-    """
-    Select a traffic profile using weighted probabilities.
-    """
 
     return rng.choices(
         PROFILES,
@@ -279,219 +272,160 @@ def profile_parameters(
     rng: random.Random,
     profile: str,
 ) -> dict:
-    """
-    Generate characteristics for one flow.
 
-    Returns:
-        protocol
-        direction
-        packet_count
-        packet_interval
-        min_size
-        max_size
-        burstiness
-    """
+    # ------------------------------------------------------------------------
+    # SLOW EXFILTRATION
+    # ------------------------------------------------------------------------
 
     if profile == "slow_exfil":
 
         return {
             "protocol": PROTO_TCP,
-            "direction": "upload",
-            "packet_count": rng.randint(5, 15),
+            "packet_count": rng.randint(100, 180),
+
+            # Slow sustained transfer.
             "packet_interval": rng.uniform(
-                0.8,
-                3.0,
+                0.20,
+                0.60,
             ),
-            "min_size": 80,
-            "max_size": 350,
+
+            "min_size": 500,
+            "max_size": 1200,
+
+            # Probability of compressed/bursty timing.
             "burstiness": rng.uniform(
                 0.05,
-                0.25,
+                0.20,
             ),
+
+            # Server response payload size.
+            "response_min_size": 20,
+            "response_max_size": 100,
         }
+
+
+    # ------------------------------------------------------------------------
+    # LOW-VOLUME EXFILTRATION
+    # ------------------------------------------------------------------------
 
     if profile == "low_volume_exfil":
 
         return {
-            "protocol": rng.choice(
-                [
-                    PROTO_TCP,
-                    PROTO_UDP,
-                ]
+            "protocol": PROTO_TCP,
+            "packet_count": rng.randint(
+                120,
+                220,
             ),
-            "direction": "upload",
-            "packet_count": rng.randint(12, 30),
+
             "packet_interval": rng.uniform(
-                0.15,
-                0.8,
+                0.08,
+                0.25,
             ),
-            "min_size": 100,
-            "max_size": 700,
+
+            "min_size": 300,
+            "max_size": 900,
+
             "burstiness": rng.uniform(
                 0.10,
-                0.35,
+                0.30,
             ),
+
+            "response_min_size": 20,
+            "response_max_size": 80,
         }
+
+
+    # ------------------------------------------------------------------------
+    # MEDIUM BURST EXFILTRATION
+    # ------------------------------------------------------------------------
 
     if profile == "medium_burst":
 
         return {
-            "protocol": rng.choice(
-                [
-                    PROTO_TCP,
-                    PROTO_UDP,
-                ]
+            "protocol": PROTO_TCP,
+
+            "packet_count": rng.randint(
+                150,
+                350,
             ),
-            "direction": "upload",
-            "packet_count": rng.randint(25, 60),
+
             "packet_interval": rng.uniform(
                 0.02,
-                0.12,
+                0.08,
             ),
-            "min_size": 350,
-            "max_size": 1100,
+
+            "min_size": 500,
+            "max_size": 1400,
+
             "burstiness": rng.uniform(
                 0.25,
                 0.60,
             ),
+
+            "response_min_size": 30,
+            "response_max_size": 120,
         }
+
+
+    # ------------------------------------------------------------------------
+    # HIGH-VOLUME BURST EXFILTRATION
+    # ------------------------------------------------------------------------
 
     if profile == "high_burst":
 
         return {
-            "protocol": rng.choice(
-                [
-                    PROTO_TCP,
-                    PROTO_UDP,
-                ]
+            "protocol": PROTO_TCP,
+
+            "packet_count": rng.randint(
+                200,
+                450,
             ),
-            "direction": "upload",
-            "packet_count": rng.randint(50, 110),
+
             "packet_interval": rng.uniform(
                 0.005,
-                0.04,
+                0.035,
             ),
+
             "min_size": 700,
             "max_size": 1450,
+
             "burstiness": rng.uniform(
                 0.45,
-                0.90,
+                0.85,
             ),
+
+            "response_min_size": 30,
+            "response_max_size": 150,
         }
 
-    if profile == "irregular_exfil":
-
-        return {
-            "protocol": rng.choice(
-                [
-                    PROTO_TCP,
-                    PROTO_UDP,
-                ]
-            ),
-            "direction": "upload",
-            "packet_count": rng.randint(15, 80),
-            "packet_interval": rng.uniform(
-                0.02,
-                0.5,
-            ),
-            "min_size": 100,
-            "max_size": 1450,
-            "burstiness": rng.uniform(
-                0.20,
-                0.95,
-            ),
-        }
-
-    if profile == "benign_upload":
-
-        return {
-            "protocol": PROTO_TCP,
-            "direction": "upload",
-            "packet_count": rng.randint(35, 100),
-            "packet_interval": rng.uniform(
-                0.01,
-                0.08,
-            ),
-            "min_size": 500,
-            "max_size": 1450,
-            "burstiness": rng.uniform(
-                0.20,
-                0.70,
-            ),
-        }
-
-    if profile == "benign_download":
-
-        return {
-            "protocol": PROTO_TCP,
-            "direction": "download",
-            "packet_count": rng.randint(35, 120),
-            "packet_interval": rng.uniform(
-                0.008,
-                0.07,
-            ),
-            "min_size": 500,
-            "max_size": 1450,
-            "burstiness": rng.uniform(
-                0.20,
-                0.70,
-            ),
-        }
-
-    if profile == "benign_backup":
-
-        return {
-            "protocol": PROTO_TCP,
-            "direction": rng.choice(
-                [
-                    "upload",
-                    "download",
-                ]
-            ),
-            "packet_count": rng.randint(50, 140),
-            "packet_interval": rng.uniform(
-                0.015,
-                0.15,
-            ),
-            "min_size": 250,
-            "max_size": 1450,
-            "burstiness": rng.uniform(
-                0.10,
-                0.60,
-            ),
-        }
 
     # ------------------------------------------------------------------------
-    # benign_application
+    # IRREGULAR EXFILTRATION
     # ------------------------------------------------------------------------
 
     return {
-        "protocol": rng.choice(
-            [
-                PROTO_TCP,
-                PROTO_UDP,
-            ]
-        ),
-        "direction": rng.choice(
-            [
-                "upload",
-                "download",
-            ]
-        ),
+        "protocol": PROTO_TCP,
+
         "packet_count": rng.randint(
-            10,
-            50,
+            100,
+            300,
         ),
+
         "packet_interval": rng.uniform(
             0.03,
-            0.3,
+            0.30,
         ),
-        "min_size": 80,
-        "max_size": 1200,
+
+        "min_size": 200,
+        "max_size": 1450,
+
         "burstiness": rng.uniform(
-            0.05,
-            0.50,
+            0.20,
+            0.80,
         ),
+
+        "response_min_size": 20,
+        "response_max_size": 120,
     }
 
 
@@ -502,80 +436,21 @@ def profile_parameters(
 def synthetic_payload(
     rng: random.Random,
     size: int,
-    profile: str,
 ) -> bytes:
+
     """
-    Create synthetic payload data.
+    Generate completely synthetic payload bytes.
 
-    No real data is read from the host.
+    No real host data is accessed.
     """
 
-    # Anomalous-like traffic gets pseudo-random bytes.
-    if profile in {
-        "slow_exfil",
-        "low_volume_exfil",
-        "medium_burst",
-        "high_burst",
-        "irregular_exfil",
-    }:
-
-        return bytes(
-            rng.randrange(
-                0,
-                256,
-            )
-            for _ in range(size)
+    return bytes(
+        rng.randrange(
+            0,
+            256,
         )
-
-    # Benign backup.
-    if profile == "benign_backup":
-
-        pattern = b"BACKUP_DATA_BLOCK_"
-
-        repetitions = (
-            size // len(pattern)
-        ) + 1
-
-        return (
-            pattern * repetitions
-        )[:size]
-
-    # Benign download.
-    if profile == "benign_download":
-
-        pattern = b"APPLICATION_DOWNLOAD_DATA_"
-
-        repetitions = (
-            size // len(pattern)
-        ) + 1
-
-        return (
-            pattern * repetitions
-        )[:size]
-
-    # Benign upload.
-    if profile == "benign_upload":
-
-        pattern = b"USER_UPLOAD_DATA_"
-
-        repetitions = (
-            size // len(pattern)
-        ) + 1
-
-        return (
-            pattern * repetitions
-        )[:size]
-
-    # Normal application.
-    pattern = b"NORMAL_APPLICATION_DATA_"
-
-    repetitions = (
-        size // len(pattern)
-    ) + 1
-
-    return (
-        pattern * repetitions
-    )[:size]
+        for _ in range(size)
+    )
 
 
 # ============================================================================
@@ -590,11 +465,7 @@ def generate_tcp_flow(
     destination_port: int,
     start_time: float,
     parameters: dict,
-    profile: str,
-) -> tuple[list, int, int]:
-    """
-    Generate exactly one TCP connection.
-    """
+) -> tuple[list, int, int, int]:
 
     packets = []
 
@@ -609,7 +480,7 @@ def generate_tcp_flow(
     )
 
     # ------------------------------------------------------------------------
-    # Handshake
+    # HANDSHAKE
     # ------------------------------------------------------------------------
 
     handshake = tcp_handshake(
@@ -625,50 +496,49 @@ def generate_tcp_flow(
     handshake[1].time = start_time + 0.001
     handshake[2].time = start_time + 0.002
 
-    packets.extend(
-        handshake
-    )
+    packets.extend(handshake)
 
+    # SYN consumes one sequence number on both sides.
     client_seq += 1
     server_seq += 1
 
-    # ------------------------------------------------------------------------
-    # Transfer parameters
-    # ------------------------------------------------------------------------
+    current_time = start_time + 0.003
 
-    current_time = (
-        start_time + 0.003
-    )
+    packet_count = parameters["packet_count"]
+    base_interval = parameters["packet_interval"]
 
-    packet_count = parameters[
-        "packet_count"
-    ]
+    min_size = parameters["min_size"]
+    max_size = parameters["max_size"]
 
-    base_interval = parameters[
-        "packet_interval"
-    ]
+    burstiness = parameters["burstiness"]
 
-    min_size = parameters[
-        "min_size"
-    ]
+    response_min_size = parameters["response_min_size"]
+    response_max_size = parameters["response_max_size"]
 
-    max_size = parameters[
-        "max_size"
-    ]
-
-    direction = parameters[
-        "direction"
-    ]
-
-    burstiness = parameters[
-        "burstiness"
-    ]
+    total_upload_bytes = 0
+    total_response_bytes = 0
 
     # ------------------------------------------------------------------------
-    # Data packets
+    # BIDIRECTIONAL DATA TRANSFER
+    # ------------------------------------------------------------------------
+    #
+    # The client sends substantially more data than the server.
+    #
+    # This creates:
+    #
+    #     orig_bytes  >> resp_bytes
+    #
+    # while still ensuring:
+    #
+    #     resp_bytes > 0
+    #
     # ------------------------------------------------------------------------
 
-    for _ in range(packet_count):
+    for packet_index in range(packet_count):
+
+        # --------------------------------------------------------------------
+        # CLIENT UPLOAD
+        # --------------------------------------------------------------------
 
         payload_size = rng.randint(
             min_size,
@@ -678,10 +548,9 @@ def generate_tcp_flow(
         payload = synthetic_payload(
             rng=rng,
             size=payload_size,
-            profile=profile,
         )
 
-        # Variable inter-arrival time.
+        # Variable timing.
         if rng.random() < burstiness:
 
             interval_multiplier = rng.uniform(
@@ -701,128 +570,105 @@ def generate_tcp_flow(
             * interval_multiplier
         )
 
-        # --------------------------------------------------------------------
-        # Upload: client -> server
-        # --------------------------------------------------------------------
-
-        if direction == "upload":
-
-            data_packet = (
-                IP(
-                    src=source_ip,
-                    dst=destination_ip,
-                )
-                /
-                TCP(
-                    sport=source_port,
-                    dport=destination_port,
-                    flags="PA",
-                    seq=client_seq,
-                    ack=server_seq,
-                )
-                /
-                Raw(
-                    load=payload
-                )
+        upload_packet = (
+            IP(
+                src=source_ip,
+                dst=destination_ip,
             )
-
-            data_packet.time = (
-                current_time
+            /
+            TCP(
+                sport=source_port,
+                dport=destination_port,
+                flags="PA",
+                seq=client_seq,
+                ack=server_seq,
             )
-
-            packets.append(
-                data_packet
+            /
+            Raw(
+                load=payload,
             )
+        )
 
-            client_seq += payload_size
+        upload_packet.time = current_time
 
-            # ACK from server.
-            ack_packet = (
-                IP(
-                    src=destination_ip,
-                    dst=source_ip,
-                )
-                /
-                TCP(
-                    sport=destination_port,
-                    dport=source_port,
-                    flags="A",
-                    seq=server_seq,
-                    ack=client_seq,
-                )
-            )
+        packets.append(upload_packet)
 
-            ack_packet.time = (
-                current_time + 0.001
-            )
-
-            packets.append(
-                ack_packet
-            )
+        client_seq += payload_size
+        total_upload_bytes += payload_size
 
         # --------------------------------------------------------------------
-        # Download: server -> client
+        # SERVER RESPONSE
+        # --------------------------------------------------------------------
+        #
+        # This is intentionally much smaller than the upload.
+        #
+        # The server response represents application-level acknowledgement /
+        # transfer control rather than another large data stream.
         # --------------------------------------------------------------------
 
-        else:
+        response_size = rng.randint(
+            response_min_size,
+            response_max_size,
+        )
 
-            data_packet = (
-                IP(
-                    src=destination_ip,
-                    dst=source_ip,
-                )
-                /
-                TCP(
-                    sport=destination_port,
-                    dport=source_port,
-                    flags="PA",
-                    seq=server_seq,
-                    ack=client_seq,
-                )
-                /
-                Raw(
-                    load=payload
-                )
+        response_payload = synthetic_payload(
+            rng=rng,
+            size=response_size,
+        )
+
+        response_packet = (
+            IP(
+                src=destination_ip,
+                dst=source_ip,
             )
-
-            data_packet.time = (
-                current_time
+            /
+            TCP(
+                sport=destination_port,
+                dport=source_port,
+                flags="PA",
+                seq=server_seq,
+                ack=client_seq,
             )
-
-            packets.append(
-                data_packet
+            /
+            Raw(
+                load=response_payload,
             )
+        )
 
-            server_seq += payload_size
+        response_packet.time = current_time + 0.001
 
-            # ACK from client.
-            ack_packet = (
-                IP(
-                    src=source_ip,
-                    dst=destination_ip,
-                )
-                /
-                TCP(
-                    sport=source_port,
-                    dport=destination_port,
-                    flags="A",
-                    seq=client_seq,
-                    ack=server_seq,
-                )
+        packets.append(response_packet)
+
+        server_seq += response_size
+        total_response_bytes += response_size
+
+        # --------------------------------------------------------------------
+        # CLIENT ACK
+        # --------------------------------------------------------------------
+
+        client_ack = (
+            IP(
+                src=source_ip,
+                dst=destination_ip,
             )
-
-            ack_packet.time = (
-                current_time + 0.001
+            /
+            TCP(
+                sport=source_port,
+                dport=destination_port,
+                flags="A",
+                seq=client_seq,
+                ack=server_seq,
             )
+        )
 
-            packets.append(
-                ack_packet
-            )
+        client_ack.time = current_time + 0.002
+
+        packets.append(client_ack)
 
         current_time += interval
 
     # ------------------------------------------------------------------------
-    # Teardown
+    # TEARDOWN
     # ------------------------------------------------------------------------
 
     teardown = tcp_teardown(
@@ -834,181 +680,22 @@ def generate_tcp_flow(
         server_seq=server_seq,
     )
 
-    teardown_start = (
-        current_time + 0.002
-    )
+    teardown_start = current_time + 0.002
 
-    for index, packet in enumerate(
-        teardown
-    ):
+    for index, packet in enumerate(teardown):
 
         packet.time = (
             teardown_start
             + index * 0.001
         )
 
-    packets.extend(
-        teardown
-    )
-
-    # ------------------------------------------------------------------------
-    # Payload byte count
-    # ------------------------------------------------------------------------
-
-    total_payload_bytes = 0
-
-    for packet in packets:
-
-        if Raw in packet:
-
-            total_payload_bytes += len(
-                bytes(
-                    packet[Raw].load
-                )
-            )
+    packets.extend(teardown)
 
     return (
         packets,
         packet_count,
-        total_payload_bytes,
-    )
-
-
-# ============================================================================
-# UDP FLOW
-# ============================================================================
-
-def generate_udp_flow(
-    rng: random.Random,
-    source_ip: str,
-    destination_ip: str,
-    source_port: int,
-    destination_port: int,
-    start_time: float,
-    parameters: dict,
-    profile: str,
-) -> tuple[list, int, int]:
-    """
-    Generate exactly one UDP flow.
-    """
-
-    packets = []
-
-    packet_count = parameters[
-        "packet_count"
-    ]
-
-    base_interval = parameters[
-        "packet_interval"
-    ]
-
-    min_size = parameters[
-        "min_size"
-    ]
-
-    max_size = parameters[
-        "max_size"
-    ]
-
-    direction = parameters[
-        "direction"
-    ]
-
-    burstiness = parameters[
-        "burstiness"
-    ]
-
-    current_time = start_time
-
-    total_payload_bytes = 0
-
-    # ------------------------------------------------------------------------
-    # UDP data
-    # ------------------------------------------------------------------------
-
-    for _ in range(packet_count):
-
-        payload_size = rng.randint(
-            min_size,
-            max_size,
-        )
-
-        payload = synthetic_payload(
-            rng=rng,
-            size=payload_size,
-            profile=profile,
-        )
-
-        if direction == "upload":
-
-            packet = (
-                IP(
-                    src=source_ip,
-                    dst=destination_ip,
-                )
-                /
-                UDP(
-                    sport=source_port,
-                    dport=destination_port,
-                )
-                /
-                Raw(
-                    load=payload
-                )
-            )
-
-        else:
-
-            packet = (
-                IP(
-                    src=destination_ip,
-                    dst=source_ip,
-                )
-                /
-                UDP(
-                    sport=destination_port,
-                    dport=source_port,
-                )
-                /
-                Raw(
-                    load=payload
-                )
-            )
-
-        packet.time = current_time
-
-        packets.append(
-            packet
-        )
-
-        total_payload_bytes += (
-            payload_size
-        )
-
-        # Variable burstiness.
-        if rng.random() < burstiness:
-
-            multiplier = rng.uniform(
-                0.15,
-                0.60,
-            )
-
-        else:
-
-            multiplier = rng.uniform(
-                0.75,
-                1.35,
-            )
-
-        current_time += (
-            base_interval
-            * multiplier
-        )
-
-    return (
-        packets,
-        packet_count,
-        total_payload_bytes,
+        total_upload_bytes,
+        total_response_bytes,
     )
 
 
@@ -1020,8 +707,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Generate synthetic exfiltration "
-            "and benign bulk-transfer traffic."
+            "Generate synthetic TCP-based exfiltration PCAP traffic."
         )
     )
 
@@ -1068,8 +754,8 @@ def main() -> None:
         type=float,
         default=5.0,
         help=(
-            "Compatibility option retained from the "
-            "original interface."
+            "Compatibility option retained "
+            "from the original interface."
         ),
     )
 
@@ -1077,49 +763,39 @@ def main() -> None:
         "--idle-gap",
         type=float,
         default=0.05,
-        help=(
-            "Gap between generated flows in seconds."
-        ),
+        help="Gap between generated flows in seconds.",
     )
 
     parser.add_argument(
         "--duration",
         type=float,
         default=3600.0,
-        help=(
-            "Maximum nominal capture duration."
-        ),
+        help="Maximum nominal capture duration.",
     )
 
     parser.add_argument(
         "--seed",
         type=int,
         default=DEFAULT_SEED,
-        help=(
-            "Random seed for reproducibility."
-        ),
+        help="Random seed for reproducibility.",
     )
 
     parser.add_argument(
         "--output",
         default="/pcaps/exfiltration.pcap",
-        help=(
-            "Output PCAP path."
-        ),
+        help="Output PCAP path.",
     )
 
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help=(
-            "Print every generated flow."
-        ),
+        help="Print every generated flow.",
     )
 
     args = parser.parse_args()
 
     # ------------------------------------------------------------------------
-    # Validation
+    # VALIDATION
     # ------------------------------------------------------------------------
 
     if args.flows <= 0:
@@ -1147,7 +823,7 @@ def main() -> None:
         )
 
     # ------------------------------------------------------------------------
-    # Random generator
+    # RNG
     # ------------------------------------------------------------------------
 
     rng = random.Random(
@@ -1157,22 +833,22 @@ def main() -> None:
     packets = []
 
     profile_counts = Counter()
-    protocol_counts = Counter()
-    direction_counts = Counter()
 
-    total_payload_bytes = 0
+    protocol_counts = Counter()
+
+    total_upload_bytes = 0
+    total_response_bytes = 0
+
     total_data_packets = 0
 
     current_time = 0.0
 
     # ------------------------------------------------------------------------
-    # Header
+    # HEADER
     # ------------------------------------------------------------------------
 
     print("=" * 76)
-    print(
-        "Aegis — Synthetic Exfiltration PCAP Generator"
-    )
+    print("Aegis — Synthetic TCP Exfiltration PCAP Generator")
     print("=" * 76)
 
     print(
@@ -1199,15 +875,21 @@ def main() -> None:
         f"Output          : {args.output}"
     )
 
+    print()
+
+    print("Traffic type    : EXFILTRATION ONLY")
+    print("Protocol        : TCP ONLY")
+    print("Direction       : BIDIRECTIONAL")
+    print("Upload          : HIGH")
+    print("Response        : SMALL / NON-ZERO")
+
     print("=" * 76)
 
     # ------------------------------------------------------------------------
-    # Generate exactly args.flows
+    # GENERATE FLOWS
     # ------------------------------------------------------------------------
 
-    for flow_index in range(
-        args.flows
-    ):
+    for flow_index in range(args.flows):
 
         profile = choose_profile(
             rng
@@ -1218,18 +900,10 @@ def main() -> None:
             profile,
         )
 
-        protocol = parameters[
-            "protocol"
-        ]
-
-        direction = parameters[
-            "direction"
-        ]
+        protocol = parameters["protocol"]
 
         # --------------------------------------------------------------------
         # UNIQUE SOURCE PORT
-        #
-        # This makes each generated flow distinguishable to Zeek.
         # --------------------------------------------------------------------
 
         source_port = (
@@ -1247,7 +921,7 @@ def main() -> None:
             )
 
         # --------------------------------------------------------------------
-        # Destination port
+        # DESTINATION PORT
         # --------------------------------------------------------------------
 
         available_ports = (
@@ -1270,49 +944,30 @@ def main() -> None:
             destination_port = args.port
 
         # --------------------------------------------------------------------
-        # Generate flow
+        # GENERATE TCP FLOW
         # --------------------------------------------------------------------
 
-        if protocol == PROTO_TCP:
-
-            (
-                flow_packets,
-                data_packets,
-                payload_bytes,
-            ) = generate_tcp_flow(
-                rng=rng,
-                source_ip=args.src,
-                destination_ip=args.dst,
-                source_port=source_port,
-                destination_port=destination_port,
-                start_time=current_time,
-                parameters=parameters,
-                profile=profile,
-            )
-
-        else:
-
-            (
-                flow_packets,
-                data_packets,
-                payload_bytes,
-            ) = generate_udp_flow(
-                rng=rng,
-                source_ip=args.src,
-                destination_ip=args.dst,
-                source_port=source_port,
-                destination_port=destination_port,
-                start_time=current_time,
-                parameters=parameters,
-                profile=profile,
-            )
+        (
+            flow_packets,
+            data_packets,
+            upload_bytes,
+            response_bytes,
+        ) = generate_tcp_flow(
+            rng=rng,
+            source_ip=args.src,
+            destination_ip=args.dst,
+            source_port=source_port,
+            destination_port=destination_port,
+            start_time=current_time,
+            parameters=parameters,
+        )
 
         packets.extend(
             flow_packets
         )
 
         # --------------------------------------------------------------------
-        # Statistics
+        # STATISTICS
         # --------------------------------------------------------------------
 
         profile_counts[
@@ -1323,20 +978,20 @@ def main() -> None:
             protocol
         ] += 1
 
-        direction_counts[
-            direction
-        ] += 1
-
         total_data_packets += (
             data_packets
         )
 
-        total_payload_bytes += (
-            payload_bytes
+        total_upload_bytes += (
+            upload_bytes
+        )
+
+        total_response_bytes += (
+            response_bytes
         )
 
         # --------------------------------------------------------------------
-        # Move to next flow
+        # MOVE TO NEXT FLOW
         # --------------------------------------------------------------------
 
         last_packet_time = max(
@@ -1361,7 +1016,7 @@ def main() -> None:
         )
 
         # --------------------------------------------------------------------
-        # Progress
+        # PROGRESS
         # --------------------------------------------------------------------
 
         if (
@@ -1375,17 +1030,16 @@ def main() -> None:
                 f"Generated "
                 f"{flow_index + 1:4d}/"
                 f"{args.flows} "
-                f"| {profile:22s} "
-                f"| {protocol.upper():3s} "
-                f"| {direction:8s} "
-                f"| data_pkts="
-                f"{data_packets:3d} "
-                f"| bytes="
-                f"{payload_bytes}"
+                f"| {profile:20s} "
+                f"| TCP "
+                f"| upload="
+                f"{upload_bytes} "
+                f"| response="
+                f"{response_bytes}"
             )
 
     # ------------------------------------------------------------------------
-    # Sort chronologically
+    # SORT CHRONOLOGICALLY
     # ------------------------------------------------------------------------
 
     packets.sort(
@@ -1395,7 +1049,7 @@ def main() -> None:
     )
 
     # ------------------------------------------------------------------------
-    # Write PCAP
+    # WRITE PCAP
     # ------------------------------------------------------------------------
 
     output_path = Path(
@@ -1413,7 +1067,7 @@ def main() -> None:
     )
 
     # ------------------------------------------------------------------------
-    # Summary
+    # SUMMARY
     # ------------------------------------------------------------------------
 
     print()
@@ -1430,20 +1084,36 @@ def main() -> None:
     )
 
     print(
-        f"Data packets          : {total_data_packets}"
+        f"Data packet groups    : {total_data_packets}"
     )
 
     print(
-        f"Synthetic payload     : "
-        f"{total_payload_bytes:,} bytes"
+        f"Upload bytes          : "
+        f"{total_upload_bytes:,}"
     )
 
     print(
-        f"Synthetic payload     : "
-        f"{total_payload_bytes / (1024 * 1024):.2f} MiB"
+        f"Response bytes        : "
+        f"{total_response_bytes:,}"
+    )
+
+    print(
+        f"Upload / response     : "
+        f"{total_upload_bytes / max(total_response_bytes, 1):.2f}"
+    )
+
+    print(
+        f"Upload MiB            : "
+        f"{total_upload_bytes / (1024 * 1024):.2f}"
+    )
+
+    print(
+        f"Response MiB          : "
+        f"{total_response_bytes / (1024 * 1024):.2f}"
     )
 
     print()
+
     print("Profiles:")
 
     for profile in PROFILES:
@@ -1459,60 +1129,39 @@ def main() -> None:
         )
 
         print(
-            f"  {profile:22s} "
+            f"  {profile:20s} "
             f"{count:5d} "
             f"({percentage:5.1f}%)"
         )
 
     print()
+
     print("Protocols:")
 
-    for protocol in [
-        PROTO_TCP,
-        PROTO_UDP,
-    ]:
-
-        count = protocol_counts[
-            protocol
-        ]
-
-        percentage = (
-            count
-            / args.flows
-            * 100
-        )
-
-        print(
-            f"  {protocol.upper():6s} "
-            f"{count:5d} "
-            f"({percentage:5.1f}%)"
-        )
+    print(
+        f"  TCP       "
+        f"{args.flows:5d} "
+        f"(100.0%)"
+    )
 
     print()
-    print("Directions:")
 
-    for direction in [
-        "upload",
-        "download",
-    ]:
+    print("Direction:")
 
-        count = direction_counts[
-            direction
-        ]
+    print(
+        f"  upload    "
+        f"{args.flows:5d} "
+        f"(100.0% dominant)"
+    )
 
-        percentage = (
-            count
-            / args.flows
-            * 100
-        )
-
-        print(
-            f"  {direction:10s} "
-            f"{count:5d} "
-            f"({percentage:5.1f}%)"
-        )
+    print(
+        "  response  "
+        f"{args.flows:5d} "
+        "(100.0% non-zero)"
+    )
 
     print()
+
     print(
         f"PCAP saved to: {output_path}"
     )
