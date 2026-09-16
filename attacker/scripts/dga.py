@@ -25,6 +25,8 @@ Example:
         --dns-server 10.10.0.5 \
         --queries 1500 \
         --seed 42 \
+        --interval 1.2 \
+        --jitter 0.2 \
         --output /pcaps/dga.pcap
 """
 
@@ -55,6 +57,11 @@ DEFAULT_DNS_SERVER = "10.10.0.5"
 DEFAULT_CLIENT_IP = "10.10.0.2"
 DEFAULT_QUERY_COUNT = 1500
 DEFAULT_SEED = 42
+
+# Timing configuration
+DEFAULT_INTERVAL = 1.2
+DEFAULT_JITTER = 0.2
+DEFAULT_RESPONSE_DELAY = 0.001
 
 DNS_PORT = 53
 
@@ -116,7 +123,6 @@ def calculate_entropy(value: str) -> float:
         return 0.0
 
     counts = Counter(value)
-
     length = len(value)
 
     entropy = 0.0
@@ -836,6 +842,26 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--interval",
+        type=float,
+        default=DEFAULT_INTERVAL,
+        help=(
+            "Average time between DNS transactions in seconds. "
+            f"Default: {DEFAULT_INTERVAL}"
+        ),
+    )
+
+    parser.add_argument(
+        "--jitter",
+        type=float,
+        default=DEFAULT_JITTER,
+        help=(
+            "Maximum random timing jitter in seconds. "
+            f"Default: ±{DEFAULT_JITTER}"
+        ),
+    )
+
+    parser.add_argument(
         "--seed",
         type=int,
         default=DEFAULT_SEED,
@@ -860,7 +886,29 @@ def parse_args() -> argparse.Namespace:
         help="Print every generated transaction.",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    if args.queries <= 0:
+        raise ValueError(
+            "--queries must be greater than zero"
+        )
+
+    if args.interval <= 0:
+        raise ValueError(
+            "--interval must be greater than zero"
+        )
+
+    if args.jitter < 0:
+        raise ValueError(
+            "--jitter must not be negative"
+        )
+
+    if args.jitter >= args.interval:
+        raise ValueError(
+            "--jitter must be smaller than --interval"
+        )
+
+    return args
 
 
 # ============================================================================
@@ -869,11 +917,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-
-    if args.queries <= 0:
-        raise ValueError(
-            "--queries must be greater than zero"
-        )
 
     rng = random.Random(
         args.seed
@@ -891,12 +934,17 @@ def main() -> None:
     print(f"DNS server      : {args.dns_server}")
     print(f"Transactions    : {args.queries}")
     print(f"Random seed     : {args.seed}")
+    print(f"Interval        : {args.interval:.3f} seconds")
+    print(f"Jitter          : ±{args.jitter:.3f} seconds")
     print(f"Output          : {args.output}")
     print("=" * 72)
 
     # ------------------------------------------------------------------------
-    # Generate transactions
+    # Generate transactions with realistic timestamps
     # ------------------------------------------------------------------------
+
+    # Fixed starting timestamp makes the generated PCAP reproducible.
+    current_time = 1700000000.0
 
     for index in range(args.queries):
         profile = choose_profile(
@@ -911,6 +959,14 @@ def main() -> None:
                 transaction_id=index + 1,
                 profile=profile,
             )
+        )
+
+        # Query happens first.
+        transaction_packets[0].time = current_time
+
+        # DNS response follows shortly after the query.
+        transaction_packets[1].time = (
+            current_time + DEFAULT_RESPONSE_DELAY
         )
 
         packets.extend(
@@ -941,12 +997,19 @@ def main() -> None:
                 f"| {metadata['domain']}"
             )
 
+        # Move to the next DNS transaction.
+        interval = args.interval + rng.uniform(
+            -args.jitter,
+            args.jitter,
+        )
+
+        current_time += max(
+            0.01,
+            interval,
+        )
+
     # ------------------------------------------------------------------------
-    # Sort by timestamp naturally through packet list order.
-    #
-    # Scapy will assign packet timestamps when the packets are written if
-    # timestamps aren't explicitly supplied. For offline dataset generation,
-    # packet ordering is sufficient for Zeek to observe the transactions.
+    # Write PCAP
     # ------------------------------------------------------------------------
 
     output_path = Path(
@@ -985,6 +1048,7 @@ def main() -> None:
     )
 
     print()
+
     print("Profiles:")
 
     for profile, count in sorted(
@@ -1001,6 +1065,7 @@ def main() -> None:
         )
 
     print()
+
     print("DNS record types:")
 
     for record_type, count in sorted(
@@ -1017,6 +1082,7 @@ def main() -> None:
         )
 
     print()
+
     print(
         f"PCAP saved to: {output_path}"
     )
@@ -1026,3 +1092,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
