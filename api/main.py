@@ -95,6 +95,7 @@ SEVERITY_THRESHOLDS = {
 class AppState:
     xgb_model        = None
     iso_forest       = None
+    label_encoder    = None  # CHANGE 1: added — used to decode XGBoost class index → class name
     es: AsyncElasticsearch = None
     startup_time: float    = 0.0
     model_loaded: bool     = False
@@ -118,10 +119,25 @@ async def lifespan(app: FastAPI):
             state.model_loaded = True
             logger.info("XGBoost model loaded from %s", MODEL_PATH)
 
-            # Configure SHAP explainer using the loaded XGBoost model
+            # CHANGE 2: load label_encoder.joblib so class index → name decoding
+            # always matches what was used during training.
+            # The old code used THREAT_CLASSES (a hardcoded list) which had a
+            # different order and included malware_tls — causing every prediction
+            # to be mapped to the wrong class name.
+            label_encoder_path = Path(MODEL_PATH).parent / "label_encoder.joblib"
+            state.label_encoder = joblib.load(label_encoder_path)
+            logger.info(
+                "Label encoder loaded — classes: %s",
+                list(state.label_encoder.classes_),
+            )
+
+            # Configure SHAP explainer using the loaded model and correct class mapping
+            # from label_encoder, not the hardcoded THREAT_CLASSES list.
             configure_explainer(
                 state.xgb_model,
-                class_mapping={name: i for i, name in enumerate(THREAT_CLASSES)}
+                class_mapping={
+                    name: i for i, name in enumerate(state.label_encoder.classes_)
+                }
             )
 
             logger.info("SHAP explainer configured")
@@ -359,7 +375,11 @@ async def infer(req: InferRequest):
     probs        = state.xgb_model.predict_proba(X)[0]
     class_idx    = int(np.argmax(probs))
     confidence   = float(probs[class_idx])
-    threat_class = THREAT_CLASSES[class_idx]
+    # CHANGE 3: use label_encoder.classes_ to decode the class index.
+    # Previously used THREAT_CLASSES[class_idx] — a hardcoded list with a
+    # different order (included malware_tls at index 3) which caused every
+    # prediction to map to the wrong class name.
+    threat_class = state.label_encoder.classes_[class_idx]
 
     # --- Isolation Forest ---
     # score_samples returns negative scores — higher = more normal
