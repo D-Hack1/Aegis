@@ -372,57 +372,78 @@ def compute_dns_features(dns_log):
 
 
 def _dns_window_features(conn_features, dns_events):
+
     if dns_events.empty:
         return pd.DataFrame(columns=DNS_FEATURE_COLUMNS)
 
-    events_by_uid = {
-        uid: group.to_dict("records")
-        for uid, group in dns_events.groupby("uid", sort=False)
-    }
     events_by_source = {
         source_ip: group.to_dict("records")
         for source_ip, group in dns_events.groupby("src_ip", sort=False)
     }
+
     rows = []
+
     for flow in conn_features.to_dict("records"):
+
         timestamp = flow["ts"]
-        uid = _text(flow["uid"])
-        same_uid_events = events_by_uid.get(uid, []) if uid else []
-        if any(event["query"] for event in same_uid_events):
-            # A Zeek UID identifies the connection directly, including DNS events after flow start.
-            events = same_uid_events
-        else:
-            events = [
-                event
-                for event in events_by_source.get(flow["src_ip"], [])
-                if 0.0 <= timestamp - event["ts"] <= WINDOW_SECONDS
-            ]
+
+        events = [
+            event
+            for event in events_by_source.get(flow["src_ip"], [])
+            if 0.0 <= timestamp - event["ts"] <= WINDOW_SECONDS
+        ]
+
         query_events = [event for event in events if event["query"]]
         queries = [event["query"] for event in query_events]
         lengths = [len(query) for query in queries]
-        fractions = dns_record_type_fractions(event["qtype"] for event in query_events)
+
+        fractions = dns_record_type_fractions(
+            event["qtype"] for event in query_events
+        )
+
         rows.append(
             {
                 "uid": flow["uid"],
+
                 "dns_query_entropy": (
-                    sum(dns_query_entropy(query) for query in queries) / len(queries)
+                    sum(dns_query_entropy(query) for query in queries)
+                    / len(queries)
                     if queries
                     else 0.0
                 ),
-                "domain_length_mean": sum(lengths) / len(lengths) if lengths else 0.0,
-                "domain_length_max": float(max(lengths)) if lengths else 0.0,
-                "subdomain_count": (
-                    sum(subdomain_count(query) for query in queries) / len(queries) if queries else 0.0
+
+                "domain_length_mean": (
+                    sum(lengths) / len(lengths)
+                    if lengths
+                    else 0.0
                 ),
+
+                "domain_length_max": (
+                    float(max(lengths))
+                    if lengths
+                    else 0.0
+                ),
+
+                "subdomain_count": (
+                    sum(subdomain_count(query) for query in queries)
+                    / len(queries)
+                    if queries
+                    else 0.0
+                ),
+
                 "dns_record_type_a_ratio": fractions["A"],
                 "dns_record_type_aaaa_ratio": fractions["AAAA"],
                 "dns_record_type_txt_ratio": fractions["TXT"],
                 "dns_record_type_mx_ratio": fractions["MX"],
+
                 "dns_query_count": len(queries),
             }
         )
-    return pd.DataFrame(rows, columns=DNS_FEATURE_COLUMNS)
 
+    return pd.DataFrame(
+        rows,
+        columns=DNS_FEATURE_COLUMNS
+    )
 
 def encode_tls_version(value):
     normalized = _text(value).upper().replace(" ", "").replace("_", "")
