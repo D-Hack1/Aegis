@@ -1,7 +1,49 @@
 import React, { useEffect, useState } from 'react';
 import { fetchHealth } from '../api/health';
 import { HealthResponse } from '../api/types';
-import { Server, Database } from 'lucide-react';
+
+const StatusDot: React.FC<{ status?: string }> = ({ status }) => {
+  const color =
+    !status ? 'var(--color-error)' :
+    status === 'ok' ? 'var(--color-success)' :
+    'var(--color-warning)';
+
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        width: '7px',
+        height: '7px',
+        borderRadius: '50%',
+        backgroundColor: color,
+        flexShrink: 0,
+      }}
+    />
+  );
+};
+
+const Chip: React.FC<{ label: string; value: string; healthy?: boolean }> = ({ label, value, healthy }) => (
+  <div
+    className="flex items-center gap-1.5"
+    style={{
+      padding: '3px 10px',
+      borderRadius: '6px',
+      fontSize: '12px',
+      border: '1px solid var(--color-border)',
+      backgroundColor: 'var(--color-surface)',
+      color: 'var(--color-text-secondary)',
+      gap: '6px',
+    }}
+  >
+    <StatusDot status={healthy === undefined ? undefined : healthy ? 'ok' : 'error'} />
+    <span style={{ fontFamily: 'inherit', fontWeight: 500 }}>
+      {label}
+    </span>
+    <span style={{ color: healthy ? 'var(--color-success)' : healthy === false ? 'var(--color-error)' : 'var(--color-text-muted)', fontWeight: 600, fontSize: '11px' }}>
+      {value}
+    </span>
+  </div>
+);
 
 export const StatusBar: React.FC = () => {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -12,43 +54,50 @@ export const StatusBar: React.FC = () => {
       setHealth(data);
     };
     check();
-    const interval = setInterval(check, 10000);
+    const interval = setInterval(check, 15000);
     return () => clearInterval(interval);
   }, []);
 
-  const getStatusColor = (status?: string) => {
-    if (!status) return 'bg-rose-500'; // offline
-    if (status === 'ok') return 'bg-emerald-500';
-    return 'bg-yellow-500';
-  };
-
   return (
-    <div className="h-14 border-b border-zinc-700 bg-zinc-950/90 backdrop-blur flex items-center justify-between px-6 z-10 w-full">
-      <div className="flex items-center gap-6">
-        <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full animate-pulse ${getStatusColor(health?.status)}`}></div>
-          <span className="text-sm font-mono text-zinc-300">
-            SYSTEM: {health?.status?.toUpperCase() || 'OFFLINE'}
-          </span>
-        </div>
-        
+    <div
+      className="flex items-center justify-between px-5"
+      style={{
+        height: '48px',
+        borderBottom: '1px solid var(--color-border)',
+        backgroundColor: 'var(--color-surface)',
+        flexShrink: 0,
+      }}
+    >
+      {/* Left: service status chips */}
+      <div className="flex items-center gap-2">
+        <Chip
+          label="System"
+          value={health?.status === 'ok' ? 'Healthy' : health?.status === 'degraded' ? 'Degraded' : 'Offline'}
+          healthy={health?.status === 'ok'}
+        />
+
         {health?.kafka && (
-          <div className="flex items-center gap-2 border-l border-zinc-800 pl-6">
-            <Server size={14} className="text-zinc-500" />
-            <span className="text-xs font-mono text-zinc-400">KAFKA: {health.kafka.status.toUpperCase()}</span>
-          </div>
+          <Chip
+            label="Kafka"
+            value={health.kafka.status === 'ok' ? 'Connected' : 'Error'}
+            healthy={health.kafka.status === 'ok'}
+          />
         )}
-        
+
         {health?.elasticsearch && (
-          <div className="flex items-center gap-2 border-l border-zinc-800 pl-6">
-            <Database size={14} className="text-zinc-500" />
-            <span className="text-xs font-mono text-zinc-400">ES: {health.elasticsearch.status.toUpperCase()}</span>
-          </div>
+          <Chip
+            label="Elasticsearch"
+            value={health.elasticsearch.status === 'ok' ? 'Connected' : 'Error'}
+            healthy={health.elasticsearch.status === 'ok'}
+          />
         )}
       </div>
-      
-      <div className="font-mono text-xs text-zinc-500">
-        UPTIME: {health?.uptime_seconds ? Math.floor(health.uptime_seconds / 60) + 'm' : '--'}
+
+      {/* Right: uptime */}
+      <div style={{ fontSize: '11.5px', color: 'var(--color-text-muted)', fontFamily: '"JetBrains Mono", monospace' }}>
+        {health?.uptime_seconds != null
+          ? `Up ${Math.floor(health.uptime_seconds / 3600)}h ${Math.floor((health.uptime_seconds % 3600) / 60)}m`
+          : 'Connecting...'}
       </div>
     </div>
   );

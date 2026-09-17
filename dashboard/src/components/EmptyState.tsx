@@ -11,12 +11,15 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   description = "No anomalies or threats detected in the current window." 
 }) => {
   return (
-    <div className="w-full h-64 flex flex-col items-center justify-center text-center panel p-8">
-      <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mb-4">
-        <ShieldCheck size={32} className="text-emerald-500" />
+    <div className="panel w-full h-64 flex flex-col items-center justify-center text-center p-8">
+      <div 
+        className="w-14 h-14 rounded-full flex items-center justify-center mb-4"
+        style={{ backgroundColor: 'var(--color-info-bg)' }}
+      >
+        <ShieldCheck size={28} style={{ color: 'var(--color-info)' }} />
       </div>
-      <h3 className="text-xl font-bold text-zinc-100 mb-2">{message}</h3>
-      <p className="text-zinc-400 max-w-md">{description}</p>
+      <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>{message}</h3>
+      <p className="text-sm max-w-md" style={{ color: 'var(--color-text-secondary)' }}>{description}</p>
     </div>
   );
 };

@@ -2,34 +2,462 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   DESIGN TOKENS — CSS Custom Properties
+   Dark (default) and Light themes
+   ============================================================ */
+
+:root,
+.dark {
+  /* Backgrounds */
+  --color-bg: #0f1117;
+  --color-bg-subtle: #13141d;
+  --color-surface: #1a1d27;
+  --color-surface-hover: #242836;
+  --color-surface-active: #2d3248;
+
+  /* Borders */
+  --color-border: #2a2e42;
+  --color-border-subtle: #222639;
+  --color-border-strong: #3d4260;
+
+  /* Text */
+  --color-text-primary: #eceef4;
+  --color-text-secondary: #8b8fa3;
+  --color-text-muted: #565b6e;
+
+  /* Accent (indigo) */
+  --color-accent: #6366f1;
+  --color-accent-hover: #818cf8;
+  --color-accent-subtle: rgba(99, 102, 241, 0.12);
+
+  /* Severity */
+  --color-critical: #ef4444;
+  --color-critical-bg: rgba(239, 68, 68, 0.1);
+  --color-critical-border: rgba(239, 68, 68, 0.2);
+  --color-high: #f59e0b;
+  --color-high-bg: rgba(245, 158, 11, 0.1);
+  --color-high-border: rgba(245, 158, 11, 0.2);
+  --color-medium: #eab308;
+  --color-medium-bg: rgba(234, 179, 8, 0.1);
+  --color-medium-border: rgba(234, 179, 8, 0.2);
+  --color-info: #3b82f6;
+  --color-info-bg: rgba(59, 130, 246, 0.1);
+  --color-info-border: rgba(59, 130, 246, 0.2);
+
+  /* Status */
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+
+  /* Vanta background (dark) */
+  --vanta-bg: 0x0f1117;
+  --vanta-color: 0x3730a3;
+  --vanta-color2: 0x1e1b4b;
+
+  /* Skeleton shimmer */
+  --skeleton-base: #1a1d27;
+  --skeleton-shine: #242836;
+
+  /* Scrollbar */
+  --scrollbar-thumb: #2a2e42;
+  --scrollbar-thumb-hover: #3d4260;
+
+  /* Chart */
+  --chart-grid: rgba(255, 255, 255, 0.05);
+  --chart-axis-text: #565b6e;
+  --chart-tooltip-bg: #1a1d27;
+  --chart-tooltip-border: #2a2e42;
+  --chart-tooltip-text: #eceef4;
+}
+
+.light {
+  /* Backgrounds */
+  --color-bg: #f8f9fc;
+  --color-bg-subtle: #f1f3f9;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f8f9fc;
+  --color-surface-active: #eef0f8;
+
+  /* Borders */
+  --color-border: #e2e5ef;
+  --color-border-subtle: #edf0f7;
+  --color-border-strong: #c8ccdc;
+
+  /* Text */
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-text-muted: #9ca3af;
+
+  /* Accent */
+  --color-accent: #4f46e5;
+  --color-accent-hover: #4338ca;
+  --color-accent-subtle: rgba(79, 70, 229, 0.08);
+
+  /* Severity */
+  --color-critical: #dc2626;
+  --color-critical-bg: rgba(220, 38, 38, 0.08);
+  --color-critical-border: rgba(220, 38, 38, 0.2);
+  --color-high: #d97706;
+  --color-high-bg: rgba(217, 119, 6, 0.08);
+  --color-high-border: rgba(217, 119, 6, 0.2);
+  --color-medium: #ca8a04;
+  --color-medium-bg: rgba(202, 138, 4, 0.08);
+  --color-medium-border: rgba(202, 138, 4, 0.2);
+  --color-info: #2563eb;
+  --color-info-bg: rgba(37, 99, 235, 0.08);
+  --color-info-border: rgba(37, 99, 235, 0.2);
+
+  /* Status */
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-error: #dc2626;
+
+  /* Vanta background (light) */
+  --vanta-bg: 0xf8f9fc;
+  --vanta-color: 0x8b8fa3;
+  --vanta-color2: 0xc8ccdc;
+
+  /* Skeleton shimmer */
+  --skeleton-base: #f1f3f9;
+  --skeleton-shine: #e2e5ef;
+
+  /* Scrollbar */
+  --scrollbar-thumb: #c8ccdc;
+  --scrollbar-thumb-hover: #a0a8c0;
+
+  /* Chart */
+  --chart-grid: rgba(0, 0, 0, 0.05);
+  --chart-axis-text: #9ca3af;
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-border: #e2e5ef;
+  --chart-tooltip-text: #111827;
+}
+
+/* ============================================================
+   BASE STYLES
+   ============================================================ */
+
 @layer base {
+  html {
+    @apply antialiased;
+    color-scheme: dark;
+  }
+
+  html.light {
+    color-scheme: light;
+  }
+
   body {
-    @apply bg-zinc-950 text-zinc-100 font-sans antialiased selection:bg-zinc-800;
+    background-color: var(--color-bg);
+    color: var(--color-text-primary);
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  ::selection {
+    background: var(--color-accent-subtle);
+    color: var(--color-text-primary);
   }
 }
+
+/* ============================================================
+   COMPONENT LAYER
+   ============================================================ */
 
 @layer components {
+  /* --- Card / Panel ---------------------------------------- */
   .panel {
-    @apply bg-zinc-900 border border-zinc-800 rounded-lg shadow-sm transition-colors duration-200;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
   }
-  
+
   .panel-hover {
-    @apply hover:bg-zinc-800/80 hover:border-zinc-700 cursor-pointer;
+    cursor: pointer;
+  }
+
+  .panel-hover:hover {
+    background-color: var(--color-surface-hover);
+    border-color: var(--color-border-strong);
+  }
+
+  /* --- Alert / Table Row ----------------------------------- */
+  .alert-row {
+    border-bottom: 1px solid var(--color-border-subtle);
+    transition: background-color 0.12s ease;
+    cursor: pointer;
+  }
+
+  .alert-row:hover {
+    background-color: var(--color-surface-hover);
+  }
+
+  .alert-row:last-child {
+    border-bottom: none;
+  }
+
+  /* --- Badge ----------------------------------------------- */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  .badge-critical {
+    color: var(--color-critical);
+    background: var(--color-critical-bg);
+    border: 1px solid var(--color-critical-border);
+  }
+
+  .badge-high {
+    color: var(--color-high);
+    background: var(--color-high-bg);
+    border: 1px solid var(--color-high-border);
+  }
+
+  .badge-medium {
+    color: var(--color-medium);
+    background: var(--color-medium-bg);
+    border: 1px solid var(--color-medium-border);
+  }
+
+  .badge-info {
+    color: var(--color-info);
+    background: var(--color-info-bg);
+    border: 1px solid var(--color-info-border);
+  }
+
+  /* --- Button ---------------------------------------------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+
+  .btn-primary {
+    background-color: var(--color-accent);
+    color: #ffffff;
+  }
+
+  .btn-primary:hover {
+    background-color: var(--color-accent-hover);
+  }
+
+  .btn-ghost {
+    background-color: transparent;
+    color: var(--color-text-secondary);
+    border-color: var(--color-border);
+  }
+
+  .btn-ghost:hover {
+    background-color: var(--color-surface-hover);
+    color: var(--color-text-primary);
+    border-color: var(--color-border-strong);
+  }
+
+  /* --- Input ---------------------------------------------- */
+  .input {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    color: var(--color-text-primary);
+    font-size: 13px;
+    padding: 7px 12px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    outline: none;
+    width: 100%;
+  }
+
+  .input::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  .input:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--color-accent-subtle);
+  }
+
+  /* --- Segmented Control ----------------------------------- */
+  .segmented {
+    display: inline-flex;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 3px;
+    gap: 2px;
+  }
+
+  .segmented-option {
+    padding: 4px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid transparent;
+  }
+
+  .segmented-option:hover {
+    color: var(--color-text-primary);
+    background-color: var(--color-surface-hover);
+  }
+
+  .segmented-option.active {
+    background-color: var(--color-accent);
+    color: #ffffff;
+    border-color: transparent;
+  }
+
+  /* --- Skeleton -------------------------------------------- */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--skeleton-base) 25%,
+      var(--skeleton-shine) 50%,
+      var(--skeleton-base) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.8s linear infinite;
+    border-radius: 6px;
+  }
+
+  /* --- Stat Card ------------------------------------------- */
+  .stat-card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 20px;
+    transition: border-color 0.15s ease;
+  }
+
+  /* --- Section Header ------------------------------------- */
+  .section-header {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    margin-bottom: 12px;
+  }
+
+  /* --- Nav Link ------------------------------------------- */
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    transition: all 0.15s ease;
+    text-decoration: none;
+  }
+
+  .nav-link:hover {
+    background-color: var(--color-surface-hover);
+    color: var(--color-text-primary);
+  }
+
+  .nav-link.active {
+    background-color: var(--color-accent-subtle);
+    color: var(--color-accent);
+  }
+
+  .dark .nav-link.active {
+    border-left: 2px solid var(--color-accent);
+    padding-left: 8px;
+  }
+
+  .light .nav-link.active {
+    border-left: 2px solid var(--color-accent);
+    padding-left: 8px;
+  }
+
+  /* --- Progress Bar --------------------------------------- */
+  .progress-bar {
+    height: 4px;
+    border-radius: 4px;
+    background-color: var(--color-border);
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    background-color: var(--color-accent);
+    transition: width 0.4s ease;
   }
 }
 
-/* Custom Scrollbar */
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* ============================================================
+   FOCUS VISIBLE (ACCESSIBILITY)
+   ============================================================ */
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ============================================================
+   PAGE TRANSITION
+   ============================================================ */
+
+.page-enter {
+  animation: fade-in 0.2s ease-out both;
+}
+
+/* ============================================================
+   RECHARTS THEMING
+   ============================================================ */
+
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: var(--chart-tooltip-bg) !important;
+  border: 1px solid var(--chart-tooltip-border) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15) !important;
+}
+
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: var(--chart-grid) !important;
 }
