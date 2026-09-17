@@ -49,7 +49,7 @@ logging.basicConfig(
 logger = logging.getLogger("kafka.producer")
 
 # Config
-KAFKA_BOOTSTRAP      = os.getenv("KAFKA_BOOTSTRAP",      "localhost:9092")
+KAFKA_BOOTSTRAP      = os.getenv("KAFKA_BOOTSTRAP",      "localhost:29092")
 KAFKA_TOPIC_FEATURES = os.getenv("KAFKA_TOPIC_FEATURES", "raw-features")
 KAFKA_BATCH_WINDOW   = float(os.getenv("KAFKA_BATCH_WINDOW", "0.1"))   # 100ms
 KAFKA_BATCH_MAX      = int(os.getenv("KAFKA_BATCH_MAX",   "500"))

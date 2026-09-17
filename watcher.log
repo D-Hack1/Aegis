@@ -1,0 +1,258 @@
+2026-09-17 18:23:53 [INFO] watcher — ============================================================
+2026-09-17 18:23:53 [INFO] watcher — Aegis — Zeek Log Watcher starting
+2026-09-17 18:23:53 [INFO] watcher —   Watch dir : /home/nived/Desktop/Aegis/zeek/logs
+2026-09-17 18:23:53 [INFO] watcher —   Output dir: /home/nived/Desktop/Aegis/data/features
+2026-09-17 18:23:53 [INFO] watcher —   Pipeline  : /home/nived/Desktop/Aegis/features/pipeline.py
+2026-09-17 18:23:53 [INFO] watcher —   Settle    : 3.0s
+2026-09-17 18:23:53 [INFO] watcher —   Queue max : 10000 rows
+2026-09-17 18:23:53 [INFO] watcher — ============================================================
+2026-09-17 18:23:53 [INFO] watcher — Settle tracker started (settle window: 3.0s)
+2026-09-17 18:23:53 [INFO] watcher — No existing log files found in zeek/logs — waiting for new ones
+2026-09-17 18:23:53 [INFO] watcher — Watching /home/nived/Desktop/Aegis/zeek/logs — press Ctrl+C to stop
+2026-09-17 18:24:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:25:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:26:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:27:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:28:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:29:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:30:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:31:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:32:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:33:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:34:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:35:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:36:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:37:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:38:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:38:10 [INFO] watcher — New file detected: zeek/logs/conn.log
+2026-09-17 18:38:42 [INFO] watcher — [2026-09-17T13:08:42.174727] TRIGGER pipeline.py — file: conn.log  size: 110.1 KB bytes
+2026-09-17 18:38:42 [INFO] watcher — Running: /usr/bin/python3 ./features/pipeline.py --zeek-dir zeek/logs --output-dir data/features --scenario-name live_1789650522
+2026-09-17 18:38:43 [INFO] watcher — [2026-09-17T13:08:43.577908] pipeline.py completed in 1.40s — output: data/features/live_1789650522.parquet
+2026-09-17 18:38:43 [INFO] watcher — Enqueued 1024 rows from live_1789650522.parquet into staging queue (queue size now: 1024)
+2026-09-17 18:39:00 [INFO] watcher — Heartbeat — staging queue: 1024 rows | watcher alive
+2026-09-17 18:39:51 [INFO] kafka.producer — ============================================================
+2026-09-17 18:39:51 [INFO] kafka.producer — Aegis — Kafka Producer starting
+2026-09-17 18:39:51 [INFO] kafka.producer —   Bootstrap : localhost:9092
+2026-09-17 18:39:51 [INFO] kafka.producer —   Topic     : raw-features
+2026-09-17 18:39:51 [INFO] kafka.producer —   Batch win : 100ms
+2026-09-17 18:39:51 [INFO] kafka.producer —   Batch max : 500 rows
+2026-09-17 18:39:51 [INFO] kafka.producer — ============================================================
+2026-09-17 18:39:51 [INFO] kafka.producer — Producer running — waiting for rows from staging queue...
+2026-09-17 18:40:00 [INFO] watcher — Heartbeat — staging queue: 1024 rows | watcher alive
+2026-09-17 18:40:01 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:40:02 [INFO] kafka.producer — Shutting down producer...
+2026-09-17 18:40:02 [INFO] kafka.producer — Flushing remaining messages...
+2026-09-17 18:40:02 [INFO] kafka.producer — All messages flushed cleanly.
+2026-09-17 18:40:02 [INFO] kafka.producer — Producer stopped.
+2026-09-17 18:40:34 [INFO] kafka.producer — ============================================================
+2026-09-17 18:40:34 [INFO] kafka.producer — Aegis — Kafka Producer starting
+2026-09-17 18:40:34 [INFO] kafka.producer —   Bootstrap : localhost:29092
+2026-09-17 18:40:34 [INFO] kafka.producer —   Topic     : raw-features
+2026-09-17 18:40:34 [INFO] kafka.producer —   Batch win : 100ms
+2026-09-17 18:40:34 [INFO] kafka.producer —   Batch max : 500 rows
+2026-09-17 18:40:34 [INFO] kafka.producer — ============================================================
+2026-09-17 18:40:34 [INFO] kafka.producer — Producer running — waiting for rows from staging queue...
+2026-09-17 18:40:44 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:40:54 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:41:00 [INFO] watcher — Heartbeat — staging queue: 1024 rows | watcher alive
+2026-09-17 18:41:04 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:41:14 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:41:24 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:41:32 [INFO] watcher — [2026-09-17T13:11:32.934049] TRIGGER pipeline.py — file: conn.log  size: 219.8 KB bytes
+2026-09-17 18:41:32 [INFO] watcher — Running: /usr/bin/python3 ./features/pipeline.py --zeek-dir zeek/logs --output-dir data/features --scenario-name live_1789650692
+2026-09-17 18:41:33 [INFO] watcher — [2026-09-17T13:11:33.885195] pipeline.py completed in 0.95s — output: data/features/live_1789650692.parquet
+2026-09-17 18:41:34 [INFO] watcher — Enqueued 2048 rows from live_1789650692.parquet into staging queue (queue size now: 3072)
+2026-09-17 18:41:34 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:41:44 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:41:54 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:42:00 [INFO] watcher — Heartbeat — staging queue: 3072 rows | watcher alive
+2026-09-17 18:42:04 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:42:14 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:42:24 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:42:34 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:42:36 [INFO] watcher — [2026-09-17T13:12:36.041244] TRIGGER pipeline.py — file: conn.log  size: 219.9 KB bytes
+2026-09-17 18:42:36 [INFO] watcher — Running: /usr/bin/python3 ./features/pipeline.py --zeek-dir zeek/logs --output-dir data/features --scenario-name live_1789650756
+2026-09-17 18:42:37 [INFO] watcher — [2026-09-17T13:12:37.010120] pipeline.py completed in 0.97s — output: data/features/live_1789650756.parquet
+2026-09-17 18:42:37 [INFO] watcher — Enqueued 2049 rows from live_1789650756.parquet into staging queue (queue size now: 5121)
+2026-09-17 18:42:44 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:42:54 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:43:00 [INFO] watcher — Heartbeat — staging queue: 5121 rows | watcher alive
+2026-09-17 18:43:03 [INFO] watcher — New file detected: zeek/logs/dns.log
+2026-09-17 18:43:04 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:43:07 [INFO] watcher — [2026-09-17T13:13:07.166493] TRIGGER pipeline.py — file: dns.log  size: 576.0 B bytes
+2026-09-17 18:43:07 [INFO] watcher — Running: /usr/bin/python3 ./features/pipeline.py --zeek-dir zeek/logs --output-dir data/features --scenario-name live_1789650787
+2026-09-17 18:43:08 [INFO] watcher — [2026-09-17T13:13:08.112160] pipeline.py completed in 0.94s — output: data/features/live_1789650787.parquet
+2026-09-17 18:43:08 [INFO] watcher — Enqueued 2050 rows from live_1789650787.parquet into staging queue (queue size now: 7171)
+2026-09-17 18:43:08 [INFO] watcher — [2026-09-17T13:13:08.239980] TRIGGER pipeline.py — file: conn.log  size: 220.2 KB bytes
+2026-09-17 18:43:08 [INFO] watcher — Running: /usr/bin/python3 ./features/pipeline.py --zeek-dir zeek/logs --output-dir data/features --scenario-name live_1789650788
+2026-09-17 18:43:09 [INFO] watcher — [2026-09-17T13:13:09.171127] pipeline.py completed in 0.93s — output: data/features/live_1789650788.parquet
+2026-09-17 18:43:09 [INFO] watcher — Enqueued 2052 rows from live_1789650788.parquet into staging queue (queue size now: 9223)
+2026-09-17 18:43:10 [INFO] watcher — [2026-09-17T13:13:10.805682] TRIGGER pipeline.py — file: dns.log  size: 869.0 B bytes
+2026-09-17 18:43:10 [INFO] watcher — Running: /usr/bin/python3 ./features/pipeline.py --zeek-dir zeek/logs --output-dir data/features --scenario-name live_1789650790
+2026-09-17 18:43:11 [INFO] watcher — [2026-09-17T13:13:11.766379] pipeline.py completed in 0.96s — output: data/features/live_1789650790.parquet
+2026-09-17 18:43:11 [WARNING] watcher — Staging queue full — dropped 1275 rows from live_1789650790.parquet (added 777). Kafka producer may be too slow.
+2026-09-17 18:43:14 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:43:24 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:43:34 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:43:44 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:43:54 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:44:00 [INFO] watcher — Heartbeat — staging queue: 10000 rows | watcher alive
+2026-09-17 18:44:00 [INFO] kafka.producer — ============================================================
+2026-09-17 18:44:00 [INFO] watcher — ============================================================
+2026-09-17 18:44:00 [INFO] kafka.producer — Aegis — Kafka Producer starting
+2026-09-17 18:44:00 [INFO] watcher — Aegis — Zeek Log Watcher starting
+2026-09-17 18:44:00 [INFO] kafka.producer —   Bootstrap : localhost:29092
+2026-09-17 18:44:00 [INFO] watcher —   Watch dir : /home/nived/Desktop/Aegis/zeek/logs
+2026-09-17 18:44:00 [INFO] kafka.producer —   Topic     : raw-features
+2026-09-17 18:44:00 [INFO] watcher —   Output dir: /home/nived/Desktop/Aegis/data/features
+2026-09-17 18:44:00 [INFO] kafka.producer —   Batch win : 100ms
+2026-09-17 18:44:00 [INFO] watcher —   Pipeline  : /home/nived/Desktop/Aegis/features/pipeline.py
+2026-09-17 18:44:00 [INFO] kafka.producer —   Batch max : 500 rows
+2026-09-17 18:44:00 [INFO] watcher —   Settle    : 3.0s
+2026-09-17 18:44:00 [INFO] kafka.producer — ============================================================
+2026-09-17 18:44:00 [INFO] watcher —   Queue max : 10000 rows
+2026-09-17 18:44:00 [INFO] watcher — ============================================================
+2026-09-17 18:44:00 [INFO] kafka.producer — Producer running — waiting for rows from staging queue...
+2026-09-17 18:44:00 [INFO] watcher — Settle tracker started (settle window: 3.0s)
+2026-09-17 18:44:00 [INFO] watcher — Found 2 existing log file(s) on startup — processing:
+2026-09-17 18:44:00 [INFO] watcher —   → zeek/logs/conn.log
+2026-09-17 18:44:00 [INFO] watcher —   → zeek/logs/dns.log
+2026-09-17 18:44:00 [INFO] watcher — Watching /home/nived/Desktop/Aegis/zeek/logs — press Ctrl+C to stop
+2026-09-17 18:44:03 [INFO] watcher — [2026-09-17T13:14:03.492377] TRIGGER pipeline.py — file: conn.log  size: 220.2 KB bytes
+2026-09-17 18:44:03 [INFO] watcher — Running: /usr/bin/python3 ./features/pipeline.py --zeek-dir zeek/logs --output-dir data/features --scenario-name live_1789650843
+2026-09-17 18:44:04 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:44:04 [INFO] watcher — [2026-09-17T13:14:04.526446] pipeline.py completed in 1.03s — output: data/features/live_1789650843.parquet
+2026-09-17 18:44:05 [INFO] watcher — Enqueued 2052 rows from live_1789650843.parquet into staging queue (queue size now: 1052)
+2026-09-17 18:44:05 [INFO] watcher — [2026-09-17T13:14:05.049386] TRIGGER pipeline.py — file: dns.log  size: 869.0 B bytes
+2026-09-17 18:44:05 [INFO] watcher — Running: /usr/bin/python3 ./features/pipeline.py --zeek-dir zeek/logs --output-dir data/features --scenario-name live_1789650845
+2026-09-17 18:44:06 [INFO] watcher — [2026-09-17T13:14:06.163868] pipeline.py completed in 1.11s — output: data/features/live_1789650845.parquet
+2026-09-17 18:44:06 [INFO] watcher — Enqueued 2052 rows from live_1789650845.parquet into staging queue (queue size now: 1466)
+2026-09-17 18:44:10 [INFO] kafka.producer — Stats (last 10s) — published: 4104 rows | dropped: 0 | batches: 10 | delivery_errors: 0
+2026-09-17 18:44:13 [INFO] watcher — Shutting down watcher...
+2026-09-17 18:44:13 [INFO] watcher — Watcher stopped cleanly.
+2026-09-17 18:44:14 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:44:14 [INFO] watcher — Shutting down watcher...
+2026-09-17 18:44:14 [INFO] watcher — Watcher stopped cleanly.
+2026-09-17 18:44:20 [INFO] kafka.producer — Shutting down producer...
+2026-09-17 18:44:20 [INFO] kafka.producer — Flushing remaining messages...
+2026-09-17 18:44:20 [INFO] kafka.producer — All messages flushed cleanly.
+2026-09-17 18:44:20 [INFO] kafka.producer — Producer stopped.
+2026-09-17 18:44:30 [INFO] kafka.producer — ============================================================
+2026-09-17 18:44:30 [INFO] kafka.producer — Aegis — Kafka Producer starting
+2026-09-17 18:44:30 [INFO] kafka.producer —   Bootstrap : localhost:29092
+2026-09-17 18:44:30 [INFO] kafka.producer —   Topic     : raw-features
+2026-09-17 18:44:30 [INFO] kafka.producer —   Batch win : 100ms
+2026-09-17 18:44:30 [INFO] kafka.producer —   Batch max : 500 rows
+2026-09-17 18:44:30 [INFO] kafka.producer — ============================================================
+2026-09-17 18:44:30 [INFO] watcher — ============================================================
+2026-09-17 18:44:30 [INFO] kafka.producer — Producer running — waiting for rows from staging queue...
+2026-09-17 18:44:30 [INFO] watcher — Aegis — Zeek Log Watcher starting
+2026-09-17 18:44:30 [INFO] watcher —   Watch dir : /home/nived/Desktop/Aegis/zeek/logs
+2026-09-17 18:44:30 [INFO] watcher —   Output dir: /home/nived/Desktop/Aegis/data/features
+2026-09-17 18:44:30 [INFO] watcher —   Pipeline  : /home/nived/Desktop/Aegis/features/pipeline.py
+2026-09-17 18:44:30 [INFO] watcher —   Settle    : 3.0s
+2026-09-17 18:44:30 [INFO] watcher —   Queue max : 10000 rows
+2026-09-17 18:44:30 [INFO] watcher — ============================================================
+2026-09-17 18:44:30 [INFO] watcher — Settle tracker started (settle window: 3.0s)
+2026-09-17 18:44:30 [INFO] watcher — Found 2 existing log file(s) on startup — processing:
+2026-09-17 18:44:30 [INFO] watcher —   → zeek/logs/conn.log
+2026-09-17 18:44:30 [INFO] watcher —   → zeek/logs/dns.log
+2026-09-17 18:44:30 [INFO] watcher — Watching /home/nived/Desktop/Aegis/zeek/logs — press Ctrl+C to stop
+2026-09-17 18:44:33 [INFO] watcher — [2026-09-17T13:14:33.202039] TRIGGER pipeline.py — file: conn.log  size: 220.2 KB bytes
+2026-09-17 18:44:33 [INFO] watcher — Running: /usr/bin/python3 ./features/pipeline.py --zeek-dir zeek/logs --output-dir data/features --scenario-name live_1789650873
+2026-09-17 18:44:34 [INFO] watcher — [2026-09-17T13:14:34.158659] pipeline.py completed in 0.96s — output: data/features/live_1789650873.parquet
+2026-09-17 18:44:34 [INFO] watcher — Enqueued 2052 rows from live_1789650873.parquet into staging queue (queue size now: 1051)
+2026-09-17 18:44:34 [INFO] watcher — [2026-09-17T13:14:34.579966] TRIGGER pipeline.py — file: dns.log  size: 869.0 B bytes
+2026-09-17 18:44:34 [INFO] watcher — Running: /usr/bin/python3 ./features/pipeline.py --zeek-dir zeek/logs --output-dir data/features --scenario-name live_1789650874
+2026-09-17 18:44:35 [INFO] watcher — [2026-09-17T13:14:35.593053] pipeline.py completed in 1.01s — output: data/features/live_1789650874.parquet
+2026-09-17 18:44:35 [INFO] watcher — Enqueued 2052 rows from live_1789650874.parquet into staging queue (queue size now: 1551)
+2026-09-17 18:44:40 [INFO] kafka.producer — Stats (last 10s) — published: 4104 rows | dropped: 0 | batches: 12 | delivery_errors: 0
+2026-09-17 18:44:50 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:45:00 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:45:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:45:10 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:45:20 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:45:30 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:45:40 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:45:50 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:46:00 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:46:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:46:10 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:46:20 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:46:30 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:46:40 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:46:50 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:47:00 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:47:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:47:10 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:47:20 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:47:30 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:47:40 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:47:50 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:48:00 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:48:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:48:10 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:48:20 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:48:30 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:48:40 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:48:50 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:49:00 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:49:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:49:10 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:49:20 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:49:30 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:49:40 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:49:50 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:50:00 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:50:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:50:10 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:50:20 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:50:30 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:50:40 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:50:50 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:51:00 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:51:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:51:10 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:51:20 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:51:30 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:51:40 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:51:50 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:52:00 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:52:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:52:10 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:52:20 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:52:30 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:52:40 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:52:50 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:53:00 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:53:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:53:10 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:53:20 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:53:30 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:53:40 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:53:50 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:54:00 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:54:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:54:10 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:54:20 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:54:30 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:54:40 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:54:50 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:55:00 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:55:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:55:10 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:55:20 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:55:30 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:55:40 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:55:50 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:56:00 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:56:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:56:10 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:56:20 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:56:30 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:56:40 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:56:50 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:57:00 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:57:00 [INFO] watcher — Heartbeat — staging queue: 0 rows | watcher alive
+2026-09-17 18:57:10 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0
+2026-09-17 18:57:20 [INFO] kafka.producer — Stats (last 10s) — published: 0 rows | dropped: 0 | batches: 0 | delivery_errors: 0

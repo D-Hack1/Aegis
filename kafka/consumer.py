@@ -68,7 +68,7 @@ dead_letter.addHandler(logging.FileHandler(DEAD_LETTER_LOG, mode="a"))
 dead_letter.propagate = False
 
 # Config
-KAFKA_BOOTSTRAP         = os.getenv("KAFKA_BOOTSTRAP",         "localhost:9092")
+KAFKA_BOOTSTRAP         = os.getenv("KAFKA_BOOTSTRAP",         "localhost:29092")
 KAFKA_TOPIC_FEATURES    = os.getenv("KAFKA_TOPIC_FEATURES",    "raw-features")
 KAFKA_TOPIC_RESULTS     = os.getenv("KAFKA_TOPIC_RESULTS",     "inference-results")
 KAFKA_TOPIC_METRICS     = os.getenv("KAFKA_TOPIC_METRICS",     "pipeline-metrics")

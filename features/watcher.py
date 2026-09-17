@@ -348,12 +348,16 @@ def process_existing_logs(watch_dir: Path, tracker: SettleTracker):
 # Main
 # ---------------------------------------------------------------------------
 def main():
+    global FEATURES_DIR, PIPELINE_SCRIPT
+
     parser = argparse.ArgumentParser(description="Zeek log watcher — triggers feature pipeline")
     parser.add_argument("--watch-dir",  default=ZEEK_LOG_DIR,    help="Directory to watch for Zeek logs")
     parser.add_argument("--output-dir", default=FEATURES_DIR,    help="Where to write Parquet feature files")
     parser.add_argument("--pipeline",   default=PIPELINE_SCRIPT, help="Path to pipeline.py")
     parser.add_argument("--settle",     default=FILE_SETTLE_SECONDS, type=float, help="Seconds to wait after last write before triggering")
     args = parser.parse_args()
+    
+    # global FEATURES_DIR, PIPELINE_SCRIPT
 
     watch_dir = Path(args.watch_dir)
     watch_dir.mkdir(parents=True, exist_ok=True)
@@ -368,7 +372,6 @@ def main():
     logger.info("=" * 60)
 
     # Update globals if overridden by CLI args
-    global FEATURES_DIR, PIPELINE_SCRIPT
     FEATURES_DIR    = args.output_dir
     PIPELINE_SCRIPT = args.pipeline
 
