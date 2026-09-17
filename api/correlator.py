@@ -56,12 +56,12 @@ async def _correlate(es: AsyncElasticsearch, index: str):
     since = (datetime.now(timezone.utc) - timedelta(minutes=LOOKBACK_MINUTES)).isoformat()
 
     # -------------------------------------------------------------------------
-    # Step 1 — Fetch all alerts in the last 10 minutes
+    # Step 1 — Fetch alerts ingested in the last 10 minutes
     # -------------------------------------------------------------------------
     query = {
         "bool": {
             "filter": [
-                {"range": {"timestamp": {"gte": since}}},
+                {"range": {"ingested_at": {"gte": since}}},
                 # Exclude benign — only real detections participate in chains
                 {"bool": {"must_not": [{"term": {"threat_class": "benign"}}]}},
             ]
@@ -73,8 +73,8 @@ async def _correlate(es: AsyncElasticsearch, index: str):
             index=index,
             query=query,
             size=1000,   # max alerts to consider per cycle — enough for SIH scale
-            _source=["src_ip", "threat_class", "kill_chain_id", "timestamp"],
-            sort=[{"timestamp": {"order": "asc"}}],
+            _source=["src_ip", "threat_class", "kill_chain_id", "timestamp", "ingested_at"],
+            sort=[{"ingested_at": {"order": "asc"}}],
         )
     except Exception as e:
         logger.error("Correlator ES query failed: %s", e)
@@ -101,6 +101,7 @@ async def _correlate(es: AsyncElasticsearch, index: str):
             "threat_class":  src.get("threat_class"),
             "kill_chain_id": src.get("kill_chain_id"),
             "timestamp":     src.get("timestamp"),
+            "ingested_at":    src.get("ingested_at"),
         })
 
     # -------------------------------------------------------------------------

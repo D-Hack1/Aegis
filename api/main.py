@@ -35,6 +35,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import joblib
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query
@@ -309,26 +313,35 @@ def _build_feature_vector(req: InferRequest) -> np.ndarray:
 
 async def _write_alert_to_es(req: InferRequest, result: dict) -> str:
     """Write a positive detection to Elasticsearch. Returns the document ID."""
+    event_time = datetime.fromtimestamp(
+        req.ts,
+        tz=timezone.utc,
+    ).isoformat()
+
+    ingested_time = datetime.now(timezone.utc).isoformat()
+
     doc = {
-        "timestamp":     datetime.fromtimestamp(req.ts, tz=timezone.utc).isoformat(),
-        "flow_id":       req.flow_id,
-        "src_ip":        req.src_ip,
-        "dst_ip":        req.dst_ip,
-        "src_port":      req.src_port,
-        "dst_port":      req.dst_port,
-        "protocol":      req.protocol,
-        "duration":      req.duration,
-        "threat_class":  result["threat_class"],
-        "severity":      result["severity"],
-        "confidence":    result["confidence"],
+        "timestamp": event_time,
+        "ingested_at": ingested_time,
+        "flow_id": req.flow_id,
+        "src_ip": req.src_ip,
+        "dst_ip": req.dst_ip,
+        "src_port": req.src_port,
+        "dst_port": req.dst_port,
+        "protocol": req.protocol,
+        "duration": req.duration,
+        "threat_class": result["threat_class"],
+        "severity": result["severity"],
+        "confidence": result["confidence"],
         "anomaly_score": result["anomaly_score"],
-        "evidence":      result["evidence"],
-        "ja3_hash":      req.ja3_hash,
-        "ja4_hash":      req.ja4_hash,
-        "is_quic":       req.is_quic,
-        "quic_0rtt":     req.quic_0rtt,
-        "kill_chain_id": None,  # filled later by correlator
+        "evidence": result["evidence"],
+        "ja3_hash": req.ja3_hash,
+        "ja4_hash": req.ja4_hash,
+        "is_quic": req.is_quic,
+        "quic_0rtt": req.quic_0rtt,
+        "kill_chain_id": None,
     }
+
     resp = await state.es.index(index=ES_INDEX, document=doc)
     return resp["_id"]
 
@@ -339,6 +352,7 @@ def _es_alert_to_dict(hit: dict) -> dict:
     return {
         "id":            hit["_id"],
         "timestamp":     src.get("timestamp"),
+        "ingested_at": src.get("ingested_at"),  
         "flow_id":       src.get("flow_id"),
         "src_ip":        src.get("src_ip"),
         "dst_ip":        src.get("dst_ip"),
@@ -389,9 +403,9 @@ async def infer(req: InferRequest):
     anomaly_score = float(np.clip(raw_score / 0.8, 0.0, 1.0))
 
     # If XGBoost confidence is below threshold, defer to anomaly detection
-    if confidence < INFER_THRESHOLD:
-        threat_class = "unknown_anomaly" if anomaly_score > 0.5 else "benign"
-
+    if anomaly_score > 0.5:
+        if confidence < INFER_THRESHOLD and threat_class == "benign":
+            threat_class = "unknown_anomaly"
     severity = _severity(confidence)
 
     # --- SHAP evidence (Gowri's module) ---
@@ -519,34 +533,51 @@ async def get_stats(hours: int = Query(default=1, ge=1, le=24)):
 
     query = {
         "bool": {
-            "filter": [{"range": {"timestamp": {"gte": since}}}]
+            "filter": [
+                {
+                    "range": {
+                        "ingested_at": {
+                            "gte": since,
+                        }
+                    }
+                }
+            ]
         }
     }
 
     aggs = {
         # Count per threat class
         "by_threat_class": {
-            "terms": {"field": "threat_class", "size": 20}
+            "terms": {
+                "field": "threat_class",
+                "size": 20,
+            }
         },
         # Count per severity
         "by_severity": {
-            "terms": {"field": "severity", "size": 10}
+            "terms": {
+                "field": "severity",
+                "size": 10,
+            }
         },
         # Alert volume in 5-minute buckets
         "timeline": {
             "date_histogram": {
-                "field":             "timestamp",
-                "fixed_interval":    "5m",
-                "min_doc_count":     0,
+                "field": "ingested_at",
+                "fixed_interval": "5m",
+                "min_doc_count": 0,
                 "extended_bounds": {
                     "min": since,
                     "max": datetime.now(timezone.utc).isoformat(),
-                }
+                },
             }
         },
         # Top 10 source IPs
         "top_src_ips": {
-            "terms": {"field": "src_ip", "size": 10}
+            "terms": {
+                "field": "src_ip",
+                "size": 10,
+            }
         },
     }
 
@@ -567,28 +598,34 @@ async def get_stats(hours: int = Query(default=1, ge=1, le=24)):
         b["key"]: b["doc_count"]
         for b in agg["by_threat_class"]["buckets"]
     }
+
     by_severity = {
         b["key"]: b["doc_count"]
         for b in agg["by_severity"]["buckets"]
     }
+
     timeline = [
         {
             "bucket": b["key_as_string"],
-            "count":  b["doc_count"],
+            "count": b["doc_count"],
         }
         for b in agg["timeline"]["buckets"]
     ]
+
     top_src_ips = [
-        {"ip": b["key"], "count": b["doc_count"]}
+        {
+            "ip": b["key"],
+            "count": b["doc_count"],
+        }
         for b in agg["top_src_ips"]["buckets"]
     ]
 
     return {
-        "total_alerts":    resp["hits"]["total"]["value"],
+        "total_alerts": resp["hits"]["total"]["value"],
         "by_threat_class": by_threat_class,
-        "by_severity":     by_severity,
-        "timeline":        timeline,
-        "top_src_ips":     top_src_ips,
+        "by_severity": by_severity,
+        "timeline": timeline,
+        "top_src_ips": top_src_ips,
     }
 
 
@@ -692,45 +729,39 @@ async def get_kill_chains(hours: int = Query(default=1, ge=1, le=24)):
 # ---------------------------------------------------------------------------
 @app.get("/metrics")
 async def get_metrics():
-    """
-    Server-Sent Events stream of pipeline-metrics Kafka topic.
-    Jaith connects via EventSource — one persistent connection, not polling.
-    """
-    async def event_stream() -> AsyncGenerator[str, None]:
+
+    async def event_stream():
         consumer = AIOKafkaConsumer(
             KAFKA_TOPIC_METRICS,
             bootstrap_servers=KAFKA_BOOTSTRAP,
-            auto_offset_reset="latest",     # only stream new messages, not history
-            group_id=None,                  # no group — each SSE connection is independent
+            auto_offset_reset="latest",
+            group_id=None,
             value_deserializer=lambda v: json.loads(v.decode("utf-8")),
-            consumer_timeout_ms=1000,
         )
+
+        await consumer.start()
+
         try:
-            await consumer.start()
-            logger.info("SSE client connected to /metrics")
+            while True:
 
-            # Send a heartbeat comment every second to keep the connection alive
-            # even when no metrics messages are flowing
-            last_heartbeat = asyncio.get_event_loop().time()
+                result = await consumer.getmany(timeout_ms=1000)
 
-            async for msg in consumer:
-                data = json.dumps(msg.value)
-                yield f"data: {data}\n\n"
+                if result:
+                    for _, messages in result.items():
+                        for msg in messages:
+                            data = json.dumps(msg.value)
+                            yield f"data: {data}\n\n"
 
-                # Yield control so other async tasks can run
-                await asyncio.sleep(0)
-
-                # Heartbeat every 15s — prevents proxy/browser timeout
-                now = asyncio.get_event_loop().time()
-                if now - last_heartbeat > 15:
+                else:
+                    # Send heartbeat when Kafka has no message
                     yield ": heartbeat\n\n"
-                    last_heartbeat = now
 
         except asyncio.CancelledError:
-            logger.info("SSE client disconnected from /metrics")
+            logger.info("SSE client disconnected")
+
         except Exception as e:
             logger.error("SSE stream error: %s", e)
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
         finally:
             await consumer.stop()
 
@@ -738,13 +769,11 @@ async def get_metrics():
         event_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control":               "no-cache",
-            "X-Accel-Buffering":           "no",    # disable nginx buffering if behind proxy
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
             "Access-Control-Allow-Origin": CORS_ORIGIN,
         },
     )
-
-
 # ---------------------------------------------------------------------------
 # GET /health
 # ---------------------------------------------------------------------------
