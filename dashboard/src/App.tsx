@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { ThemeSwitch } from './components/ThemeSwitch';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
 import { LiveFeed } from './views/LiveFeed';
@@ -32,12 +33,10 @@ const AppInner: React.FC = () => {
   const vantaRef = useRef<HTMLDivElement>(null);
   const vantaEffect = useRef<any>(null);
 
+  // Initialize Vanta once
   useEffect(() => {
     const initVanta = () => {
       if (vantaRef.current && window.VANTA) {
-        // Destroy existing instance before recreating with new theme colors
-        if (vantaEffect.current) vantaEffect.current.destroy();
-
         vantaEffect.current = window.VANTA.DOTS({
           el: vantaRef.current,
           mouseControls: true,
@@ -47,17 +46,15 @@ const AppInner: React.FC = () => {
           minWidth: 200,
           scale: 1,
           scaleMobile: 1,
-          // Adapt colors to theme
-          color: theme === 'dark' ? 0x3730a3 : 0xc8ccdc,
-          color2: theme === 'dark' ? 0x1e1b4b : 0xe2e5ef,
-          backgroundColor: theme === 'dark' ? 0x0f1117 : 0xf8f9fc,
+          color: theme === 'dark' ? 0xaa938c : 0xaa938c,
+          color2: theme === 'dark' ? 0x9d8a88 : 0x9d8a88,
+          backgroundColor: theme === 'dark' ? 0x0 : 0xf8f9fc,
           size: theme === 'dark' ? 2.5 : 2,
           spacing: theme === 'dark' ? 28 : 32,
         });
       }
     };
 
-    // Wait for Vanta to be available (loaded via CDN)
     if (window.VANTA) {
       initVanta();
     } else {
@@ -68,14 +65,27 @@ const AppInner: React.FC = () => {
         }
       }, 100);
     }
-
+    // Cleanup on unmount
     return () => {
       if (vantaEffect.current) {
         vantaEffect.current.destroy();
         vantaEffect.current = null;
       }
     };
-  }, [theme]); // Re-init when theme changes
+  }, []); // Run once
+
+  // Update Vanta colors on theme change
+  useEffect(() => {
+    if (vantaEffect.current) {
+      vantaEffect.current.setOptions({
+        color: theme === 'dark' ? 0xaa938c : 0xaa938c,
+        color2: theme === 'dark' ? 0x9d8a88 : 0x9d8a88,
+        backgroundColor: theme === 'dark' ? 0x0 : 0xf8f9fc,
+        size: theme === 'dark' ? 2.5 : 2,
+        spacing: theme === 'dark' ? 28 : 32,
+      });
+    }
+  }, [theme]);
 
   return (
     <BrowserRouter>
@@ -83,8 +93,13 @@ const AppInner: React.FC = () => {
       <div
         ref={vantaRef}
         className="fixed inset-0 z-0 pointer-events-none"
-        style={{ opacity: theme === 'dark' ? 0.45 : 0.6 }}
+        style={{ opacity: theme === 'dark' ? 0.45 : 0.6, transition: 'opacity 0.3s ease' }}
       />
+
+      {/* Theme Switch — top right */}
+      <div style={{ position: 'fixed', top: '14px', right: '18px', zIndex: 50 }}>
+        <ThemeSwitch />
+      </div>
 
       {/* App Shell */}
       <div

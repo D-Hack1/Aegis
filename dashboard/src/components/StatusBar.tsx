@@ -94,10 +94,12 @@ export const StatusBar: React.FC = () => {
       </div>
 
       {/* Right: uptime */}
-      <div style={{ fontSize: '11.5px', color: 'var(--color-text-muted)', fontFamily: '"JetBrains Mono", monospace' }}>
-        {health?.uptime_seconds != null
-          ? `Up ${Math.floor(health.uptime_seconds / 3600)}h ${Math.floor((health.uptime_seconds % 3600) / 60)}m`
-          : 'Connecting...'}
+      <div className="flex items-center gap-4">
+        <div style={{ fontSize: '11.5px', color: 'var(--color-text-muted)', fontFamily: '"JetBrains Mono", monospace' }}>
+          {health?.uptime_seconds != null
+            ? `Up ${Math.floor(health.uptime_seconds / 3600)}h ${Math.floor((health.uptime_seconds % 3600) / 60)}m`
+            : 'Connecting...'}
+        </div>
       </div>
     </div>
   );

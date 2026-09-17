@@ -22,6 +22,7 @@ export const Sidebar: React.FC = () => {
         backgroundColor: 'var(--color-surface)',
         borderColor: 'var(--color-border)',
         flexShrink: 0,
+        transition: 'width 0.3s ease, background-color 0.3s',
       }}
     >
       {/* Logo */}
@@ -35,10 +36,14 @@ export const Sidebar: React.FC = () => {
         }}
       >
         {collapsed ? (
-          <Shield size={22} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
+          <img
+            src="/icon.png"
+            alt="Aegis icon"
+            style={{ height: '28px', width: 'auto', objectFit: 'contain' }}
+          />
         ) : (
           <img
-            src="/title.png"
+            src={theme === 'dark' ? '/title.png' : '/light%20mode%20title.png'}
             alt="Aegis"
             style={{ height: '28px', width: 'auto', objectFit: 'contain' }}
           />
@@ -50,15 +55,16 @@ export const Sidebar: React.FC = () => {
         onClick={() => setCollapsed(prev => !prev)}
         className="absolute -right-3 top-[52px] z-20 flex items-center justify-center rounded-full border transition-all duration-150"
         style={{
-          width: '22px',
-          height: '22px',
+          width: '28px',
+          height: '28px',
           backgroundColor: 'var(--color-surface)',
           borderColor: 'var(--color-border)',
-          color: 'var(--color-text-muted)',
+          color: 'var(--color-accent)',
+          transition: 'background-color 0.3s ease, border-color 0.3s ease',
         }}
         aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
-        {collapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+        {collapsed ? <ChevronRight size={20} style={{ color: 'var(--color-accent)' }} /> : <ChevronLeft size={20} style={{ color: 'var(--color-accent)' }} />}
       </button>
 
       {/* Nav */}
@@ -87,20 +93,8 @@ export const Sidebar: React.FC = () => {
           borderColor: 'var(--color-border)',
         }}
       >
-        {/* Theme toggle */}
-        <button
-          onClick={toggleTheme}
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          className="nav-link"
-          style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
-        >
-          {theme === 'dark' ? <Sun size={17} style={{ flexShrink: 0 }} /> : <Moon size={17} style={{ flexShrink: 0 }} />}
-          {!collapsed && (
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '12.5px' }}>
-              {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-            </span>
-          )}
-        </button>
+        {/* Theme toggle moved to top‑right */}
+        {/* Placeholder retained for future customizations */}
 
         {/* Version */}
         {!collapsed && (

@@ -152,6 +152,7 @@
     background-color: var(--color-bg);
     color: var(--color-text-primary);
     font-family: 'Inter', system-ui, sans-serif;
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
 
   ::selection {
@@ -455,9 +456,82 @@
   border: 1px solid var(--chart-tooltip-border) !important;
   border-radius: 8px !important;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15) !important;
+  color: var(--chart-tooltip-text) !important;
+}
+
+.recharts-tooltip-wrapper .recharts-default-tooltip,
+.recharts-tooltip-wrapper .recharts-default-tooltip *,
+.recharts-tooltip-wrapper .recharts-tooltip-item,
+.recharts-tooltip-wrapper .recharts-tooltip-item-name,
+.recharts-tooltip-wrapper .recharts-tooltip-item-value,
+.recharts-tooltip-wrapper .recharts-tooltip-label {
+  color: var(--chart-tooltip-text) !important;
 }
 
 .recharts-cartesian-grid-horizontal line,
 .recharts-cartesian-grid-vertical line {
   stroke: var(--chart-grid) !important;
+}
+
+/* ============================================================
+   CUSTOM UIVERSE THEME SWITCHER
+   ============================================================ */
+.switch {
+  --input-focus: #3b82f6;
+  --bg-color: #ffffff;
+  --bg-color-alt: #666;
+  --main-color: var(--color-text-primary, #323232);
+  --input-out-of-focus: var(--color-border, #ccc);
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 52px;
+  height: 26px;
+}
+
+.toggle {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.slider {
+  box-sizing: border-box;
+  border-radius: 100px;
+  border: 2px solid var(--main-color);
+  box-shadow: 2px 2px var(--main-color);
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--input-out-of-focus);
+  transition: 0.3s ease;
+}
+
+.slider:before {
+  content: " ";
+  box-sizing: border-box;
+  height: 16px;
+  width: 16px;
+  border-radius: 100px;
+  border: 2px solid var(--main-color);
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  background-color: var(--bg-color);
+  transition: 0.3s ease;
+}
+
+.toggle:checked + .slider {
+  background-color: var(--input-focus);
+}
+
+.toggle:checked + .slider:before {
+  transform: translateX(24px);
+  background-color: #0f172a;
 }

@@ -127,7 +127,12 @@ export const Stats: React.FC = () => {
               <BarChart data={threatData} layout="vertical" margin={{ top: 0, right: 0, left: 30, bottom: 0 }}>
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: 'var(--chart-axis-text)', fontSize: 12 }} width={100} />
-                <Tooltip cursor={{ fill: 'var(--chart-grid)' }} />
+                <Tooltip 
+                  cursor={{ fill: 'var(--chart-grid)' }} 
+                  contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', borderColor: 'var(--chart-tooltip-border)', color: 'var(--chart-tooltip-text)' }}
+                  itemStyle={{ color: 'var(--chart-tooltip-text)' }}
+                  labelStyle={{ color: 'var(--chart-tooltip-text)' }}
+                />
                 <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                   {threatData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={getBarColor(entry.class)} />
@@ -146,7 +151,12 @@ export const Stats: React.FC = () => {
               <LineChart data={timelineData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: 'var(--chart-axis-text)', fontSize: 12 }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--chart-axis-text)', fontSize: 12 }} />
-                <Tooltip cursor={{ stroke: 'var(--chart-grid)', strokeWidth: 1 }} />
+                <Tooltip 
+                  cursor={{ stroke: 'var(--chart-grid)', strokeWidth: 1 }} 
+                  contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', borderColor: 'var(--chart-tooltip-border)', color: 'var(--chart-tooltip-text)' }}
+                  itemStyle={{ color: 'var(--chart-tooltip-text)' }}
+                  labelStyle={{ color: 'var(--chart-tooltip-text)' }}
+                />
                 <Line 
                   type="monotone" 
                   dataKey="count" 

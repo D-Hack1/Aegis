@@ -17,24 +17,24 @@ export const AlertSidePanel: React.FC<AlertSidePanelProps> = ({ alert, onClose }
   if (!alert) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
       {/* Backdrop overlay */}
       <div 
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity animate-fade-in" 
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity animate-fade-in" 
         onClick={onClose}
       />
       
-      {/* Slide-in Panel */}
+      {/* Centered Modal Popup */}
       <div 
-        className="relative w-full max-w-lg h-full shadow-2xl flex flex-col animate-slide-in-right"
+        className="relative w-full max-w-3xl h-[85vh] shadow-2xl flex flex-col rounded-xl overflow-hidden animate-fade-in border"
         style={{
-          backgroundColor: 'var(--color-bg)',
-          borderLeft: '1px solid var(--color-border)',
+          backgroundColor: 'var(--color-surface)',
+          borderColor: 'var(--color-border)',
         }}
       >
         <div 
           className="p-5 flex items-center justify-between sticky top-0 z-10"
-          style={{ borderBottom: '1px solid var(--color-border)' }}
+          style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)' }}
         >
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>Alert Inspector</h2>

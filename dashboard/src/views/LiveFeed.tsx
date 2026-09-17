@@ -40,8 +40,8 @@ export const LiveFeed: React.FC = () => {
   });
 
   return (
-    <div className="h-full flex flex-col p-6 max-w-7xl mx-auto w-full animate-fade-in">
-      <div className="flex items-end justify-between mb-6">
+    <div className="flex flex-col p-6 max-w-7xl mx-auto w-full h-full overflow-hidden animate-fade-in">
+      <div className="flex items-end justify-between mb-6 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-semibold flex items-center gap-2 mb-1" style={{ color: 'var(--color-text-primary)' }}>
             <Shield size={24} style={{ color: 'var(--color-accent)' }} />
@@ -70,7 +70,7 @@ export const LiveFeed: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto rounded-lg panel flex flex-col">
+      <div className="overflow-auto rounded-lg panel flex flex-col flex-1 min-h-0">
         {isLoading && !data ? (
           <div className="flex flex-col">
             {[1, 2, 3, 4, 5].map(i => (
