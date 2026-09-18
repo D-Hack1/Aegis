@@ -15,6 +15,15 @@ except ModuleNotFoundError:  # Supports running this file directly as a script.
 
 WINDOW_SECONDS = 60.0
 EPSILON = 1e-9
+# Floor used only for packets_per_sec / bytes_per_sec so a burst of near-
+# instantaneous packets (duration ~= 0, common for single-packet SYN-flood
+# style flows) doesn't collapse the rate to 0 via safe_divide's zero-guard —
+# exactly the signal these features exist to catch.
+MIN_RATE_DURATION = 1e-3
+# Minimum inter-arrival samples before trusting a periodicity score. With
+# only one interval, _standard_deviation trivially returns 0.0, which would
+# make 1/std explode to a huge, meaningless "perfectly periodic" score.
+MIN_PERIODICITY_SAMPLES = 2
 REQUIRED_CONN_COLUMNS = (
     "uid",
     "ts",
@@ -148,7 +157,10 @@ def _iat_features(intervals):
 
     iat_mean = sum(intervals) / len(intervals)
     iat_std = _standard_deviation(intervals)
-    periodicity_score = 1.0 / max(iat_std, EPSILON)
+    if len(intervals) >= MIN_PERIODICITY_SAMPLES:
+        periodicity_score = 1.0 / max(iat_std, EPSILON)
+    else:
+        periodicity_score = 0.0
     return iat_mean, iat_std, min(intervals), max(intervals), periodicity_score
 
 
@@ -201,7 +213,10 @@ def compute_conn_features(conn_log):
     normalized = _normalise_conn_log(conn_log)
     source_windows = defaultdict(deque)
     destination_windows = defaultdict(deque)
-    source_iats = defaultdict(list)
+    # Windowed the same way as source_windows/destination_windows — an
+    # unbounded per-source list here would grow forever over a long-running
+    # live capture instead of reflecting the same rolling window.
+    source_iats = defaultdict(deque)
     previous_source_timestamp = {}
     feature_rows = []
 
@@ -218,13 +233,21 @@ def compute_conn_features(conn_log):
         while destination_window and timestamp - destination_window[0][0] > WINDOW_SECONDS:
             destination_window.popleft()
 
+        source_iat_window = source_iats[source_ip]
+        while source_iat_window and timestamp - source_iat_window[0][0] > WINDOW_SECONDS:
+            source_iat_window.popleft()
+
         if source_ip in previous_source_timestamp:
-            source_iats[source_ip].append(max(0.0, timestamp - previous_source_timestamp[source_ip]))
+            source_iat_window.append(
+                (timestamp, max(0.0, timestamp - previous_source_timestamp[source_ip]))
+            )
         previous_source_timestamp[source_ip] = timestamp
 
         source_window.append((timestamp, destination_ip, destination_port))
         destination_window.append((timestamp, source_ip))
-        iat_mean, iat_std, iat_min, iat_max, _ = _iat_features(source_iats[source_ip])
+        iat_mean, iat_std, iat_min, iat_max, _ = _iat_features(
+            [interval for _, interval in source_iat_window]
+        )
         rolling_timestamps = [entry[0] for entry in source_window]
         rolling_iats = [
             current - previous
@@ -252,8 +275,8 @@ def compute_conn_features(conn_log):
                 "resp_bytes": resp_bytes,
                 "orig_pkts": orig_pkts,
                 "resp_pkts": record["resp_pkts"],
-                "packets_per_sec": safe_divide(orig_pkts, duration),
-                "bytes_per_sec": safe_divide(orig_bytes, duration),
+                "packets_per_sec": safe_divide(orig_pkts, max(duration, MIN_RATE_DURATION)),
+                "bytes_per_sec": safe_divide(orig_bytes, max(duration, MIN_RATE_DURATION)),
                 "outbound_inbound_ratio": safe_divide(orig_bytes, resp_bytes + 1.0),
                 "fan_out": float(len({(ip, port) for _, ip, port in source_window})),
                 "fan_in": float(len({ip for _, ip in destination_window})),
@@ -376,6 +399,19 @@ def _dns_window_features(conn_features, dns_events):
     if dns_events.empty:
         return pd.DataFrame(columns=DNS_FEATURE_COLUMNS)
 
+    # Two join strategies, matched by flow uid first:
+    #  - Same-uid: the DNS query happened on this exact connection (e.g. a
+    #    flow carrying its own DNS traffic, as with DNS tunnelling). These
+    #    events can occur at/after the flow's own start time.
+    #  - Fallback (no uid match): the classic "resolve, then connect"
+    #    pattern — DNS lookups from the same source IP that happened at or
+    #    before the flow started. Most flows hit this path, since a flow's
+    #    uid is a different connection than the DNS lookup that preceded it.
+    events_by_uid = {
+        uid: group.to_dict("records")
+        for uid, group in dns_events.groupby("uid", sort=False)
+        if uid
+    }
     events_by_source = {
         source_ip: group.to_dict("records")
         for source_ip, group in dns_events.groupby("src_ip", sort=False)
@@ -386,12 +422,20 @@ def _dns_window_features(conn_features, dns_events):
     for flow in conn_features.to_dict("records"):
 
         timestamp = flow["ts"]
+        flow_uid = flow.get("uid", "")
 
-        events = [
-            event
-            for event in events_by_source.get(flow["src_ip"], [])
-            if 0.0 <= timestamp - event["ts"] <= WINDOW_SECONDS
-        ]
+        if flow_uid and flow_uid in events_by_uid:
+            events = [
+                event
+                for event in events_by_uid[flow_uid]
+                if 0.0 <= event["ts"] - timestamp <= WINDOW_SECONDS
+            ]
+        else:
+            events = [
+                event
+                for event in events_by_source.get(flow["src_ip"], [])
+                if 0.0 <= timestamp - event["ts"] <= WINDOW_SECONDS
+            ]
 
         query_events = [event for event in events if event["query"]]
         queries = [event["query"] for event in query_events]

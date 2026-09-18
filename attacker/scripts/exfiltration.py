@@ -51,10 +51,11 @@ from __future__ import annotations
 
 import argparse
 import random
+import time
 from collections import Counter
 from pathlib import Path
 
-from scapy.all import IP, TCP, Raw, wrpcap
+from scapy.all import IP, TCP, Raw, send, wrpcap
 
 
 # ============================================================================
@@ -792,6 +793,15 @@ def main() -> None:
         help="Print every generated flow.",
     )
 
+    parser.add_argument(
+        "--send-live",
+        action="store_true",
+        help="Actually transmit the generated packets in real time (for the "
+             "live lab demo), instead of only writing a PCAP for offline/"
+             "dataset use. Use a small --flows count with this — the "
+             "default --flows/--duration are sized for dataset generation.",
+    )
+
     args = parser.parse_args()
 
     # ------------------------------------------------------------------------
@@ -1047,6 +1057,31 @@ def main() -> None:
             packet.time
         )
     )
+
+    # ------------------------------------------------------------------------
+    # SEND LIVE (optional — for the live lab demo; off by default since the
+    # default --flows/--duration are sized for offline dataset generation)
+    # ------------------------------------------------------------------------
+
+    if args.send_live:
+        # Response packets are crafted with src=destination_ip, dst=args.src
+        # (our own real IP) so a single script can synthesize both sides of
+        # the connection offline. Sending those live means addressing a
+        # packet to our OWN IP — scapy can't ARP-resolve that sensibly and
+        # hangs (falls back to broadcast after a ~1-2s timeout, per packet).
+        # Only the genuine outbound half (src == our real address) can
+        # actually go out on the wire; the full bidirectional set is still
+        # written to the pcap below for offline/dataset use.
+        outbound = [p for p in packets if p[IP].src == args.src]
+        for index, packet in enumerate(outbound):
+            send(packet, verbose=False)
+            if index + 1 < len(outbound):
+                pause = max(
+                    0.0,
+                    float(outbound[index + 1].time) - float(packet.time),
+                )
+                if pause:
+                    time.sleep(pause)
 
     # ------------------------------------------------------------------------
     # WRITE PCAP

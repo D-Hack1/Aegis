@@ -5,7 +5,7 @@ from confluent_kafka.admin import AdminClient
 topics = {"raw-features", "inference-results", "alerts", "pipeline-metrics"}
 
 def main():
-    bootstrap = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
+    bootstrap = os.getenv("KAFKA_BOOTSTRAP", "localhost:29092")
     client = AdminClient({"bootstrap.servers": bootstrap})
 
     metadata = client.list_topics(timeout=10)

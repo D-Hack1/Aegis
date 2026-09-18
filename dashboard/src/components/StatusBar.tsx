@@ -8,8 +8,13 @@ export const StatusBar: React.FC = () => {
 
   useEffect(() => {
     const check = async () => {
-      const data = await fetchHealth();
-      setHealth(data);
+      try {
+        const data = await fetchHealth();
+        setHealth(data);
+      } catch (error) {
+        console.error("Health check failed", error);
+        setHealth(null);
+      }
     };
     check();
     const interval = setInterval(check, 10000);

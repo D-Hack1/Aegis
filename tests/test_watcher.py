@@ -35,12 +35,8 @@ def test_staging_queue_accepts_rows():
 
 
 def test_non_log_file_is_ignored():
-    """
-    Replace `YourEventHandler` below with the actual
-    event-handler class name from watcher.py.
-    """
-
-    handler = watcher.YourEventHandler()
+    tracker = MagicMock()
+    handler = watcher.ZeekLogHandler(tracker)
 
     event = MagicMock()
     event.src_path = "/zeek/logs/test.txt"
@@ -48,5 +44,4 @@ def test_non_log_file_is_ignored():
 
     handler.on_created(event)
 
-    # Verify that no pipeline call / queue insertion occurred.
-    # Adapt this depending on your actual implementation.
+    tracker.touch.assert_not_called()

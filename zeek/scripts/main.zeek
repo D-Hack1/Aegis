@@ -8,12 +8,12 @@
 #
 #   Live interface:
 #     zeek -i eth0 /usr/local/zeek/share/zeek/site/main.zeek \
-#          LogAscii::output_dir=/zeek/logs
+#          Log::default_logdir=/zeek/logs
 #
 #   PCAP replay:
 #     zeek -C -r /path/to/capture.pcap \
 #          /usr/local/zeek/share/zeek/site/main.zeek \
-#          LogAscii::output_dir=/zeek/logs
+#          Log::default_logdir=/zeek/logs
 #
 # Logs written to /zeek/logs (volume-mounted to ./zeek/logs on the host).
 # The feature pipeline reads from ./zeek/logs:

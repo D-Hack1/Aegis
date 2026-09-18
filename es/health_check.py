@@ -11,7 +11,7 @@ def main():
     status = health["status"]
 
     if status not in ("green", "yellow"):
-        print(f"Success: cluster status is {status}")
+        print(f"Failure: cluster status is {status}")
         sys.exit(1)
 
     if not es.indices.exists(index="alerts"):

@@ -17,8 +17,8 @@ Environment variables:
     ES_INDEX             Elasticsearch index name  (default: alerts)
     KAFKA_BOOTSTRAP      Kafka broker              (default: localhost:9092)
     KAFKA_TOPIC_METRICS  Metrics topic             (default: pipeline-metrics)
-    MODEL_PATH           XGBoost model path        (default: ../ml/model.joblib)
-    ISO_FOREST_PATH      Isolation Forest path     (default: ../ml/iso_forest.joblib)
+    MODEL_PATH           XGBoost model path        (default: <repo>/ml/model.joblib)
+    ISO_FOREST_PATH      Isolation Forest path     (default: <repo>/ml/iso_forest.joblib)
     INFER_THRESHOLD      Min confidence to classify as threat (default: 0.5)
     CORS_ORIGIN          Frontend origin           (default: http://localhost:5173)
 """
@@ -48,7 +48,8 @@ from pydantic import BaseModel, Field
 from elasticsearch import AsyncElasticsearch, NotFoundError
 from aiokafka import AIOKafkaConsumer
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from features.schema import FEATURE_COLUMNS, BOOL_COLUMNS, FILL_ZERO_COLUMNS
 from ml.explainability import configure_explainer
@@ -71,20 +72,10 @@ ES_PORT             = int(os.getenv("ES_PORT",         "9200"))
 ES_INDEX            = os.getenv("ES_INDEX",            "alerts")
 KAFKA_BOOTSTRAP     = os.getenv("KAFKA_BOOTSTRAP",     "localhost:9092")
 KAFKA_TOPIC_METRICS = os.getenv("KAFKA_TOPIC_METRICS", "pipeline-metrics")
-MODEL_PATH          = os.getenv("MODEL_PATH",          "../ml/model.joblib")
-ISO_FOREST_PATH     = os.getenv("ISO_FOREST_PATH",     "../ml/iso_forest.joblib")
+MODEL_PATH          = os.getenv("MODEL_PATH",          str(REPO_ROOT / "ml" / "model.joblib"))
+ISO_FOREST_PATH     = os.getenv("ISO_FOREST_PATH",     str(REPO_ROOT / "ml" / "iso_forest.joblib"))
 INFER_THRESHOLD     = float(os.getenv("INFER_THRESHOLD", "0.5"))
 CORS_ORIGIN         = os.getenv("CORS_ORIGIN",         "http://localhost:5173")
-
-THREAT_CLASSES = [
-    "ddos",
-    "c2_beaconing",
-    "dns_anomaly",
-    "malware_tls",
-    "port_scan",
-    "exfiltration",
-    "benign",
-]
 
 SEVERITY_THRESHOLDS = {
     "critical": 0.90,
@@ -299,12 +290,19 @@ def _severity(confidence: float) -> str:
 def _build_feature_vector(req: InferRequest) -> np.ndarray:
     """
     Extract model input vector from the request in FEATURE_COLUMNS order.
-    Boolean columns are cast to int. Missing columns filled with 0.
+    Boolean columns are cast to int. Only columns in FILL_ZERO_COLUMNS may
+    default to 0 when absent — any other missing column is a real error
+    rather than something to silently mask.
     """
     row = req.model_dump()
     vector = []
     for col in FEATURE_COLUMNS:
-        val = row.get(col, 0.0)
+        if col in row:
+            val = row[col]
+        elif col in FILL_ZERO_COLUMNS:
+            val = 0.0
+        else:
+            raise ValueError(f"missing required feature column: {col}")
         if col in BOOL_COLUMNS:
             val = int(bool(val))
         vector.append(float(val))
@@ -402,17 +400,34 @@ async def infer(req: InferRequest):
     # Clamp to 0–1 range (typical range is roughly 0.0–0.8)
     anomaly_score = float(np.clip(raw_score / 0.8, 0.0, 1.0))
 
-    # If XGBoost confidence is below threshold, defer to anomaly detection
-    if anomaly_score > 0.5:
-        if confidence < INFER_THRESHOLD and threat_class == "benign":
-            threat_class = "unknown_anomaly"
-    severity = _severity(confidence)
+    # If XGBoost confidence is below threshold, defer to anomaly detection —
+    # regardless of which class XGBoost's low-confidence guess happened to be
+    # (previously this only fired when that guess was "benign", so a
+    # low-confidence "port_scan" call was never corrected even with a high
+    # anomaly_score).
+    model_class = threat_class
+    if confidence < INFER_THRESHOLD and anomaly_score > 0.5:
+        threat_class = "unknown_anomaly"
+        # Severity for this class must reflect how anomalous the flow is —
+        # confidence is by definition low here and would always bottom out
+        # at "info"/"medium", hiding severe outliers.
+        severity = _severity(anomaly_score)
+    else:
+        severity = _severity(confidence)
 
     # --- SHAP evidence (Gowri's module) ---
     evidence: list[str] = []
     try:
         from ml.explainability import explain
-        evidence = explain(req.model_dump(), threat_class)
+        # Explain against the model's own predicted class (class_mapping only
+        # knows the trained label-encoder classes) — "unknown_anomaly" is a
+        # synthetic label assigned above, not something SHAP can look up.
+        evidence = explain(req.model_dump(), model_class)
+        if threat_class == "unknown_anomaly":
+            evidence.append(
+                f"Anomaly score {anomaly_score:.2f} exceeded threshold — "
+                f"closest known class was '{model_class}' at {confidence:.0%} confidence"
+            )
     except ImportError:
         logger.warning("ml.explainability not available yet — evidence will be empty")
     except Exception as e:
@@ -491,6 +506,9 @@ async def get_alerts(
             from_=from_idx,
             size=page_size,
             sort=[{"timestamp": {"order": "desc"}}],
+            # Without this, ES caps hit counting at 10,000 and `total` becomes
+            # an unlabelled lower bound past that — pagination silently lies.
+            track_total_hits=True,
         )
     except Exception as e:
         logger.error("ES search failed: %s", e)
@@ -587,6 +605,7 @@ async def get_stats(hours: int = Query(default=1, ge=1, le=24)):
             query=query,
             aggs=aggs,
             size=0,  # we only want aggregations, not individual hits
+            track_total_hits=True,
         )
     except Exception as e:
         logger.error("ES stats aggregation failed: %s", e)
@@ -640,7 +659,11 @@ async def get_kill_chains(hours: int = Query(default=1, ge=1, le=24)):
         "bool": {
             "filter": [
                 {"exists": {"field": "kill_chain_id"}},
-                {"range":  {"timestamp": {"gte": since}}},
+                # Must match the correlator's own lookback field (ingested_at,
+                # wall-clock) — filtering on `timestamp` (Zeek capture time)
+                # let correctly-built chains fall outside this window whenever
+                # capture time and ingest time diverge, e.g. replayed PCAPs.
+                {"range":  {"ingested_at": {"gte": since}}},
             ]
         }
     }

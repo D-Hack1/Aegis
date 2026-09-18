@@ -48,28 +48,53 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 
 # ── project import — schema is the single source of truth ─────────────────
 try:
     from features.schema import FEATURE_COLUMNS
+    from features.pipeline import (
+        BOOL_SCHEMA_FIELDS,
+        INT_SCHEMA_FIELDS,
+        SCHEMA_COLUMNS,
+        STRING_SCHEMA_FIELDS,
+    )
 except ModuleNotFoundError:
     # Allow running from inside the data/ directory
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from features.schema import FEATURE_COLUMNS
+    from features.pipeline import (
+        BOOL_SCHEMA_FIELDS,
+        INT_SCHEMA_FIELDS,
+        SCHEMA_COLUMNS,
+        STRING_SCHEMA_FIELDS,
+    )
 
-# Known valid attack classes — must match ml/train.py CLASS_NAMES
-KNOWN_CLASSES: list[str] = [
+# Every value a durable FeatureRow.label may hold — must match the classes
+# listed in features/schema.py's FeatureRow docstring.
+DURABLE_LABEL_VALUES: tuple[str, ...] = (
     "benign",
     "ddos",
     "c2_beaconing",
     "dns_anomaly",
+    "malware_tls",
     "port_scan",
     "exfiltration",
-]
+)
+
+# Known valid attack classes — must match ml/train.py CLASS_NAMES
+KNOWN_CLASSES: list[str] = list(DURABLE_LABEL_VALUES)
+
+# Columns that only belong in model-input frames (FEATURE_COLUMNS), never in
+# the durable per-flow schema persisted to Parquet (SCHEMA_COLUMNS) — e.g.
+# ja4_hash_enc is derived from the durable ja4_hash at model-preprocessing
+# time and should never itself be written to a scenario Parquet file.
+MODEL_ONLY_COLUMNS: frozenset[str] = frozenset(FEATURE_COLUMNS) - frozenset(SCHEMA_COLUMNS)
 
 # Required fields in every label JSON file
 REQUIRED_LABEL_FIELDS: tuple[str, ...] = (
@@ -83,6 +108,105 @@ REQUIRED_LABEL_FIELDS: tuple[str, ...] = (
 # Imbalance threshold — warn if a class has fewer than this fraction of rows
 # compared to the largest class
 IMBALANCE_THRESHOLD = 0.10
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PER-FILE / PER-DATAFRAME VALIDATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class ValidationResult:
+    """Result of validating a single durable feature DataFrame or Parquet file."""
+
+    passed: bool
+    errors: list[str] = field(default_factory=list)
+    label_counts: dict[str, int] = field(default_factory=dict)
+
+
+def validate_dataframe(df: pd.DataFrame, require_label: bool = False) -> ValidationResult:
+    """
+    Validate a single durable feature DataFrame against features/schema.py +
+    features/pipeline.py's SCHEMA_COLUMNS contract.
+
+    Checks: no duplicate column names, non-empty, exactly SCHEMA_COLUMNS
+    present (missing columns error, unexpected columns error — model-only
+    encoded columns like ja4_hash_enc get a specific message), no duplicate
+    flow_id values, all numeric columns finite, integer columns non-negative
+    whole numbers, and (if require_label) every label value is a known
+    DURABLE_LABEL_VALUES entry.
+    """
+    errors: list[str] = []
+
+    dup_cols = sorted(set(df.columns[df.columns.duplicated()]))
+    if dup_cols:
+        errors.append(f"duplicate column names: {', '.join(dup_cols)}")
+        return ValidationResult(passed=False, errors=errors)
+
+    if df.empty:
+        errors.append("dataframe is empty")
+        return ValidationResult(passed=False, errors=errors)
+
+    schema_columns = set(SCHEMA_COLUMNS)
+    missing = sorted(schema_columns - set(df.columns))
+    if missing:
+        errors.append(f"missing required columns: {', '.join(missing)}")
+
+    extra = sorted(set(df.columns) - schema_columns)
+    for col in extra:
+        if col in MODEL_ONLY_COLUMNS:
+            errors.append(f"unexpected model-only column: {col}")
+        else:
+            errors.append(f"unexpected column: {col}")
+
+    if "flow_id" in df.columns and df["flow_id"].duplicated().any():
+        errors.append("duplicate flow_id values")
+
+    non_value_fields = STRING_SCHEMA_FIELDS | BOOL_SCHEMA_FIELDS | {"label"}
+    for col in schema_columns & set(df.columns):
+        if col in non_value_fields:
+            continue
+        numeric = pd.to_numeric(df[col], errors="coerce")
+        if numeric.isna().any() or not np.isfinite(numeric.to_numpy(dtype=float)).all():
+            errors.append(f"non-finite {col}")
+            continue
+        if col in INT_SCHEMA_FIELDS:
+            values = numeric.to_numpy(dtype=float)
+            if (values < 0).any() or not np.all(np.equal(np.mod(values, 1), 0)):
+                errors.append(f"invalid non-negative integer {col}")
+
+    label_counts: dict[str, int] = {}
+    if "label" in df.columns:
+        label_counts = df["label"].dropna().value_counts().to_dict()
+        if require_label:
+            invalid_labels = sorted(set(df["label"].dropna()) - set(DURABLE_LABEL_VALUES))
+            if invalid_labels:
+                errors.append(f"invalid labels: {', '.join(invalid_labels)}")
+
+    return ValidationResult(passed=not errors, errors=errors, label_counts=label_counts)
+
+
+def validate_file(path: Path, require_label: bool = False) -> ValidationResult:
+    """Read a Parquet file and validate it with validate_dataframe()."""
+    try:
+        df = pd.read_parquet(path)
+    except Exception as exc:
+        return ValidationResult(passed=False, errors=[f"could not read Parquet: {exc}"])
+    return validate_dataframe(df, require_label=require_label)
+
+
+def _validate_paths(paths, require_label: bool = False) -> int:
+    """CLI helper: validate a list of Parquet file paths, print results, return exit code."""
+    exit_code = 0
+    for raw_path in paths:
+        path = Path(raw_path)
+        result = validate_file(path, require_label=require_label)
+        if result.passed:
+            print(f"  [OK]      {path.name}")
+        else:
+            exit_code = 1
+            for err in result.errors:
+                print(f"  [ERROR]   {path.name}: {err}")
+    return exit_code
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -372,14 +496,26 @@ def check_class_balance(
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main(
-    raw_dir:      Path = Path("data/raw"),
+    raw_dir=None,
     labels_dir:   Path = Path("data/labels"),
     features_dir: Path = Path("data/features"),
     skip_pcap:    bool = False,
+    require_label: bool = False,
 ) -> int:
     """
-    Run all checks. Returns 0 if clean, 1 if any errors found.
+    Run all directory-level integrity checks. Returns 0 if clean, 1 if any
+    errors found.
+
+    Also doubles as the entry point for per-file validation: pass a list or
+    tuple of Parquet paths as `raw_dir` to validate each with validate_file()
+    instead (e.g. `main([path1, path2])`).
     """
+    if isinstance(raw_dir, (list, tuple)):
+        return _validate_paths(raw_dir, require_label=require_label)
+
+    if raw_dir is None:
+        raw_dir = Path("data/raw")
+
     c = _Counters()
 
     print("═" * 60)

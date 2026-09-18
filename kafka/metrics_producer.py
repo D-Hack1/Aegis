@@ -6,7 +6,10 @@ from confluent_kafka import Producer, Consumer, TopicPartition
 
 TOPIC = "pipeline-metrics"
 MONITOR_TOPIC = "raw-features"
-GROUP_ID = "feature-consumer-group"
+# Must match kafka/consumer.py's KAFKA_CONSUMER_GROUP — this script reports lag
+# for that consumer group, so it has to query the group that's actually reading
+# MONITOR_TOPIC (a different/nonexistent group always reports 0 lag).
+GROUP_ID = os.getenv("KAFKA_CONSUMER_GROUP", "aegis-consumer")
 INTERVAL = 2
 
 def get_queue_depth(bootstrap: str) -> int:

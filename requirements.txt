@@ -19,14 +19,23 @@ shap==0.46.0
 matplotlib==3.9.4
 
 # ── Kafka (for streaming inference — Phase 4) ─────────────────────────────
-kafka-python==2.0.2
+# NOTE: kafka/*.py uses confluent_kafka (librdkafka bindings), not kafka-python.
+# Do not reintroduce kafka-python — its top-level `kafka` package name collides
+# with the project's own kafka/ directory and silently shadows it on import.
+confluent-kafka==2.5.0
 
 # ── Elasticsearch client (for alert storage) ──────────────────────────────
 elasticsearch==8.13.0
+aiohttp==3.9.5           # required by elasticsearch's async transport (AiohttpHttpNode)
 
 # ── API layer ─────────────────────────────────────────────────────────────
 fastapi==0.111.1
 uvicorn[standard]==0.30.3
+aiokafka==0.11.0
+cramjam==2.12.1          # required by aiokafka to decompress lz4-compressed messages
+                          # (kafka/consumer.py's producer uses compression.type=lz4)
+python-dotenv==1.0.1
 
 # ── Feature pipeline ──────────────────────────────────────────────────────
-# (no extra deps — uses stdlib + pandas + pyarrow only)
+watchdog==4.0.2
+requests==2.32.3

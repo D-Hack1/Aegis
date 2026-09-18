@@ -12,9 +12,10 @@ from __future__ import annotations
 import argparse
 import math
 import random
+import time
 from pathlib import Path
 
-from scapy.all import IP, TCP, UDP, DNS, DNSQR, DNSRR, Raw, wrpcap
+from scapy.all import IP, TCP, UDP, DNS, DNSQR, DNSRR, Raw, send, wrpcap
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -321,7 +322,7 @@ PROFILES = {
 # Main generator
 # ---------------------------------------------------------------------------
 
-def generate_benign_pcap(n_flows=1500, seed=42, output="data/raw/benign.pcap", src_ip=BENIGN_IP, dst_ip=VICTIM_IP):
+def generate_benign_pcap(n_flows=1500, seed=42, output="data/raw/benign.pcap", src_ip=BENIGN_IP, dst_ip=VICTIM_IP, send_live=False):
     rng = random.Random(seed)
     all_packets = []
     next_port = _next_port_factory(rng)
@@ -360,9 +361,32 @@ def generate_benign_pcap(n_flows=1500, seed=42, output="data/raw/benign.pcap", s
             all_packets.extend(_ntp_like(src_ip, dst_ip, sport, current_time, rng))
 
     all_packets.sort(key=lambda p: float(p.time))
+
+    if send_live:
+        # Half of all_packets are synthetic "replies" crafted with
+        # src=dst_ip (the victim) so a single script can produce a
+        # complete two-sided conversation offline. Sending those live
+        # would mean addressing a real packet to our OWN IP — scapy has
+        # no real ARP entry for that, so it hangs resolving each one
+        # (falls back to broadcast after a ~1-2s timeout, per packet,
+        # which is what "taking forever" was). Only the genuine outbound
+        # half (src == our real address) can actually go out on the
+        # wire; the full bidirectional set is still written to the pcap
+        # below for offline/dataset use.
+        outbound = [p for p in all_packets if p[IP].src == src_ip]
+        for index, packet in enumerate(outbound):
+            send(packet, verbose=False)
+            if index + 1 < len(outbound):
+                pause = max(0.0, float(outbound[index + 1].time) - float(packet.time))
+                if pause:
+                    time.sleep(pause)
+
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     wrpcap(output, all_packets)
-    print(f"Successfully wrote {len(all_packets)} packets.")
+    if send_live:
+        print(f"Sent {len(outbound)} outbound packets live (of {len(all_packets)} total in the archived pcap) to {output}.")
+    else:
+        print(f"Successfully wrote {len(all_packets)} packets to {output}.")
 
 
 if __name__ == "__main__":
@@ -372,5 +396,10 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--src-ip", default=BENIGN_IP)
     parser.add_argument("--dst-ip", default=VICTIM_IP)
+    parser.add_argument(
+        "--send-live", action="store_true",
+        help="Actually transmit the generated packets in real time (for the live lab demo), "
+             "instead of only writing a PCAP for offline/dataset use.",
+    )
     args = parser.parse_args()
-    generate_benign_pcap(args.flows, args.seed, args.output, args.src_ip, args.dst_ip)
+    generate_benign_pcap(args.flows, args.seed, args.output, args.src_ip, args.dst_ip, args.send_live)

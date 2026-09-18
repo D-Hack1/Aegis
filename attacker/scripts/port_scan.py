@@ -138,7 +138,7 @@ def build_packets(target, start_port, end_port, target_flows, source_ip, ports=N
 
 def main():
     args = parse_args()
-    output = args.output or "data/raw/port_scan_candidate.pcap"
+    output = args.output or "/pcaps/port_scan_candidate.pcap"
 
     if args.mode == "nmap":
         command = ["nmap", "-sS", "-p", f"{args.start_port}-{args.end_port}", args.target]

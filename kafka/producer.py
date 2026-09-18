@@ -125,6 +125,44 @@ def _key(row: dict) -> bytes | None:
     return None
 
 
+def _publish(producer: Producer, topic: str, payload, key: str | None = None) -> bool:
+    """
+    Serialise + publish one row to Kafka. Returns True if produce() was
+    accepted (delivery is still async — see _on_delivery for the outcome).
+    Retries once after a flush if the internal producer queue is full.
+    Dead-letters and returns False if serialisation or produce() fails.
+    """
+    value = _serialise(payload)
+    if value is None:
+        return False
+
+    key_bytes = key.encode("utf-8") if key else None
+
+    try:
+        producer.produce(topic=topic, key=key_bytes, value=value, on_delivery=_on_delivery)
+        producer.poll(0)
+        return True
+    except BufferError:
+        logger.warning("Kafka internal buffer full — flushing before retry")
+        producer.flush(timeout=5.0)
+        try:
+            producer.produce(topic=topic, key=key_bytes, value=value, on_delivery=_on_delivery)
+            producer.poll(0)
+            return True
+        except KafkaException as e:
+            logger.error("Retry failed — dropping row: %s", e)
+            dead_letter.error(
+                "%s | kafka_error=%s | row=%r",
+                datetime.now(timezone.utc).isoformat(), str(e), payload,
+            )
+            _rows_dropped.inc()
+            return False
+    except KafkaException as e:
+        logger.error("produce() failed — dropping row: %s", e)
+        _rows_dropped.inc()
+        return False
+
+
 # Stats logger — runs in a background thread, prints throughput every 10s
 def _stats_loop(stop_event: threading.Event):
     while not stop_event.is_set():
@@ -205,45 +243,13 @@ def run():
                 producer.poll(0)
                 continue
 
-            # Publish batch
+            # Publish batch — _publish() dead-letters and counts drops itself
+            # on serialisation or produce() failure.
             published_this_batch = 0
             for row in batch:
-                value = _serialise(row)
-                if value is None:
-                    continue  # dead-lettered, skip
-
-                key = _key(row)
-
-                try:
-                    producer.produce(
-                        topic=KAFKA_TOPIC_FEATURES,
-                        key=key,
-                        value=value,
-                        on_delivery=_on_delivery,
-                    )
+                src_ip = row.get("src_ip") if isinstance(row, dict) else None
+                if _publish(producer, KAFKA_TOPIC_FEATURES, row, key=src_ip):
                     published_this_batch += 1
-                except BufferError:
-                    # Kafka internal queue is full — flush and retry once
-                    logger.warning("Kafka internal buffer full — flushing before retry")
-                    producer.flush(timeout=5.0)
-                    try:
-                        producer.produce(
-                            topic=KAFKA_TOPIC_FEATURES,
-                            key=key,
-                            value=value,
-                            on_delivery=_on_delivery,
-                        )
-                        published_this_batch += 1
-                    except KafkaException as e:
-                        logger.error("Retry failed — dropping row: %s", e)
-                        dead_letter.error(
-                            "%s | kafka_error=%s | row=%r",
-                            datetime.now(timezone.utc).isoformat(), str(e), row,
-                        )
-                        _rows_dropped.inc()
-                except KafkaException as e:
-                    logger.error("produce() failed — dropping row: %s", e)
-                    _rows_dropped.inc()
 
             # Poll to trigger delivery callbacks for this batch
             producer.poll(0)

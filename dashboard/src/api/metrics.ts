@@ -1,7 +1,5 @@
 import { PipelineMetrics } from './types';
 
-let mockInterval: any = null;
-
 export const subscribePipelineMetrics = (
   onMessage: (data: PipelineMetrics) => void,
   onError: (error: Event) => void
@@ -18,32 +16,13 @@ export const subscribePipelineMetrics = (
   };
 
   eventSource.onerror = (error) => {
-    console.warn("SSE connection error, falling back to mock generation", error);
+    // The browser's EventSource retries the connection on its own — surface
+    // the disconnected state to the caller rather than fabricating metrics.
     onError(error);
-    
-    // If SSE fails, fallback to generating mock metrics locally every 2 seconds
-    if (!mockInterval) {
-      mockInterval = setInterval(() => {
-        const mockData: PipelineMetrics = {
-          ts: new Date().toISOString(),
-          flows_per_sec: 80 + Math.random() * 20,
-          bytes_per_sec: 140000 + Math.random() * 10000,
-          kafka_queue_depth: Math.floor(Math.random() * 15),
-          pipeline_latency_ms: 40 + Math.random() * 15, // Change this to >100 or >500 to test colors
-          latency_ms_mean: 45 + Math.random() * 5,
-          window_flows: 160 + Math.floor(Math.random() * 40)
-        };
-        onMessage(mockData);
-      }, 2000);
-    }
   };
 
   // Return unsubscribe function
   return () => {
     eventSource.close();
-    if (mockInterval) {
-      clearInterval(mockInterval);
-      mockInterval = null;
-    }
   };
 };

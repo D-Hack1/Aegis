@@ -1,0 +1,32 @@
+2026-09-18 10:50:53 [INFO] kafka.consumer — ============================================================
+2026-09-18 10:50:53 [INFO] kafka.consumer — Aegis — Kafka Consumer starting
+2026-09-18 10:50:53 [INFO] kafka.consumer —   Bootstrap    : localhost:29092
+2026-09-18 10:50:53 [INFO] kafka.consumer —   Input topic  : raw-features
+2026-09-18 10:50:53 [INFO] kafka.consumer —   Results topic: inference-results
+2026-09-18 10:50:53 [INFO] kafka.consumer —   Metrics topic: pipeline-metrics
+2026-09-18 10:50:53 [INFO] kafka.consumer —   Consumer group: aegis-consumer
+2026-09-18 10:50:53 [INFO] kafka.consumer —   Infer URL    : http://localhost:8000/infer
+2026-09-18 10:50:53 [INFO] kafka.consumer —   Infer timeout: 10s
+2026-09-18 10:50:53 [INFO] kafka.consumer — ============================================================
+2026-09-18 10:50:53 [INFO] kafka.consumer — Metrics publisher started (interval: 2.0s)
+2026-09-18 10:50:53 [INFO] kafka.consumer — Consumer running — waiting for messages on 'raw-features'...
+2026-09-18 10:54:01 [INFO] kafka.consumer — Progress — processed: 100 messages | errors: 0 | last latency: 78.2ms
+2026-09-18 10:54:09 [INFO] kafka.consumer — Progress — processed: 200 messages | errors: 0 | last latency: 96.8ms
+2026-09-18 10:54:16 [INFO] kafka.consumer — Progress — processed: 300 messages | errors: 0 | last latency: 85.9ms
+2026-09-18 10:54:24 [INFO] kafka.consumer — Progress — processed: 400 messages | errors: 0 | last latency: 60.9ms
+2026-09-18 10:54:32 [INFO] kafka.consumer — Progress — processed: 500 messages | errors: 0 | last latency: 66.4ms
+2026-09-18 10:54:39 [INFO] kafka.consumer — Progress — processed: 600 messages | errors: 0 | last latency: 59.2ms
+2026-09-18 10:54:46 [INFO] kafka.consumer — Progress — processed: 700 messages | errors: 0 | last latency: 86.5ms
+2026-09-18 10:54:54 [INFO] kafka.consumer — Progress — processed: 800 messages | errors: 0 | last latency: 33.5ms
+2026-09-18 10:55:01 [INFO] kafka.consumer — Progress — processed: 900 messages | errors: 0 | last latency: 46.3ms
+2026-09-18 10:55:08 [INFO] kafka.consumer — Progress — processed: 1000 messages | errors: 0 | last latency: 85.3ms
+2026-09-18 11:01:19 [INFO] kafka.consumer — Progress — processed: 1100 messages | errors: 0 | last latency: 67.2ms
+2026-09-18 11:01:26 [INFO] kafka.consumer — Progress — processed: 1200 messages | errors: 0 | last latency: 94.7ms
+2026-09-18 11:01:33 [INFO] kafka.consumer — Progress — processed: 1300 messages | errors: 0 | last latency: 129.1ms
+2026-09-18 11:01:39 [INFO] kafka.consumer — Progress — processed: 1400 messages | errors: 0 | last latency: 46.7ms
+2026-09-18 11:01:46 [INFO] kafka.consumer — Progress — processed: 1500 messages | errors: 0 | last latency: 55.9ms
+2026-09-18 11:01:52 [INFO] kafka.consumer — Progress — processed: 1600 messages | errors: 0 | last latency: 51.1ms
+2026-09-18 11:02:00 [INFO] kafka.consumer — Progress — processed: 1700 messages | errors: 0 | last latency: 114.3ms
+2026-09-18 11:02:06 [INFO] kafka.consumer — Progress — processed: 1800 messages | errors: 0 | last latency: 58.3ms
+2026-09-18 11:02:13 [INFO] kafka.consumer — Progress — processed: 1900 messages | errors: 0 | last latency: 65.8ms
+2026-09-18 11:02:20 [INFO] kafka.consumer — Progress — processed: 2000 messages | errors: 0 | last latency: 56.1ms

@@ -79,6 +79,20 @@ FILE_SETTLE_SECONDS = 3.0
 # ---------------------------------------------------------------------------
 staging_queue: queue.Queue = queue.Queue(maxsize=STAGING_MAXSIZE)
 
+# pipeline.py has no incremental/offset tracking — it recomputes features for
+# the *entire* conn.log every time it's triggered. Combined with a stable
+# live scenario name (below), that means each trigger re-emits every flow
+# seen so far, not just new ones. Track already-enqueued flow_ids so a
+# re-triggered run doesn't publish (and re-alert on) the same flow twice.
+_enqueued_flow_ids: set[str] = set()
+_enqueued_lock = threading.Lock()
+
+# Live captures (logs sitting directly in the watched dir, not a per-scenario
+# subdirectory) need one stable scenario name for the life of this process —
+# generating a fresh timestamp-based name on every settle event would create
+# a new output Parquet (and re-enqueue every historical row under it) each time.
+_LIVE_SCENARIO_NAME = f"live_{int(time.time())}"
+
 
 # ---------------------------------------------------------------------------
 # File settle tracker
@@ -194,8 +208,8 @@ def trigger_pipeline(log_path: str):
     )
 
     # Derive scenario name from the log file's parent directory name,
-    # or fall back to a timestamp if the structure is flat.
-    scenario = log_path.parent.name if log_path.parent.name != "logs" else f"live_{int(time.time())}"
+    # or fall back to a stable per-process name if the structure is flat.
+    scenario = log_path.parent.name if log_path.parent.name != "logs" else _LIVE_SCENARIO_NAME
     output_dir = Path(FEATURES_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{scenario}.parquet"
@@ -267,14 +281,35 @@ def _enqueue_parquet(parquet_path: Path):
 
         rows_added = 0
         rows_dropped = 0
+        rows_skipped_duplicate = 0
 
-        for _, row in df.iterrows():
-            row_dict = row.to_dict()
-            try:
-                staging_queue.put_nowait(row_dict)
-                rows_added += 1
-            except queue.Full:
-                rows_dropped += 1
+        with _enqueued_lock:
+            for _, row in df.iterrows():
+                row_dict = row.to_dict()
+                flow_id = row_dict.get("flow_id")
+
+                if flow_id is not None:
+                    if flow_id in _enqueued_flow_ids:
+                        rows_skipped_duplicate += 1
+                        continue
+                    _enqueued_flow_ids.add(flow_id)
+
+                try:
+                    staging_queue.put_nowait(row_dict)
+                    rows_added += 1
+                except queue.Full:
+                    rows_dropped += 1
+                    if flow_id is not None:
+                        # Didn't actually make it onto the queue — allow a
+                        # later run to retry this flow instead of losing it.
+                        _enqueued_flow_ids.discard(flow_id)
+
+        if rows_skipped_duplicate:
+            logger.debug(
+                "Skipped %d already-enqueued row(s) from %s — pipeline.py "
+                "reprocesses the full log on every trigger",
+                rows_skipped_duplicate, parquet_path.name,
+            )
 
         if rows_dropped:
             logger.warning(

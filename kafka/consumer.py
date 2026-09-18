@@ -77,6 +77,8 @@ KAFKA_AUTO_OFFSET_RESET = os.getenv("KAFKA_AUTO_OFFSET_RESET", "earliest")
 INFER_URL               = os.getenv("INFER_URL",               "http://localhost:8000/infer")
 INFER_TIMEOUT           = int(os.getenv("INFER_TIMEOUT",       "10"))
 METRICS_INTERVAL        = float(os.getenv("METRICS_INTERVAL",  "2"))
+INFER_MAX_RETRIES       = int(os.getenv("INFER_MAX_RETRIES",   "3"))
+INFER_RETRY_BACKOFF     = float(os.getenv("INFER_RETRY_BACKOFF", "1.0"))
 
 
 # Thread-safe rolling stats for metrics messages
@@ -307,7 +309,12 @@ def _publish(producer: Producer, topic: str, payload: dict, key: str | None = No
     except BufferError:
         producer.flush(timeout=5.0)
         try:
-            producer.produce(topic=topic, value=value, on_delivery=_delivery_cb)
+            producer.produce(
+                topic=topic,
+                key=key.encode("utf-8") if key else None,
+                value=value,
+                on_delivery=_delivery_cb,
+            )
         except KafkaException as e:
             logger.error("Failed to publish to %s after flush: %s", topic, e)
     except KafkaException as e:
@@ -425,18 +432,38 @@ def run():
                 errors += 1
                 continue
 
-            # Step 3 + 4 — POST to /infer, get result + latency
-            infer_result, latency_ms = _call_infer(row, arrival_ts)
+            # Step 3 + 4 — POST to /infer, get result + latency.
+            # Kafka only tracks one offset cursor per partition, so leaving
+            # this offset uncommitted does NOT retry it in isolation — the
+            # next successfully-processed message on this partition commits
+            # a higher offset and silently carries us past this one. Retry
+            # in-process instead, bounded, before giving up on this message.
+            infer_result = None
+            latency_ms = 0.0
+            for attempt in range(1, INFER_MAX_RETRIES + 1):
+                infer_result, latency_ms = _call_infer(row, arrival_ts)
+                if infer_result is not None:
+                    break
+                if attempt < INFER_MAX_RETRIES:
+                    logger.warning(
+                        "/infer failed for flow_id=%s (attempt %d/%d) — retrying in %.1fs",
+                        row.flow_id, attempt, INFER_MAX_RETRIES, INFER_RETRY_BACKOFF,
+                    )
+                    time.sleep(INFER_RETRY_BACKOFF)
 
             if infer_result is None:
-                # /infer failed — don't commit so we can retry on restart
-                # (unless this is a persistent bad message, in which case
-                # increase INFER_TIMEOUT or check the API)
-                logger.warning(
-                    "Skipping commit for offset %d (flow_id=%s) due to infer failure",
-                    offset, row.flow_id,
+                dead_letter.error(
+                    "%s | error=infer_failed_after_retries | offset=%d | flow_id=%s | attempts=%d",
+                    datetime.now(timezone.utc).isoformat(), offset, row.flow_id, INFER_MAX_RETRIES,
                 )
-                # Still record stats so metrics aren't blank
+                logger.error(
+                    "Dead-lettering flow_id=%s (offset %d) after %d failed /infer attempts",
+                    row.flow_id, offset, INFER_MAX_RETRIES,
+                )
+                # Commit so a permanently-failing message doesn't block the
+                # partition forever — it's recorded in the dead-letter log.
+                consumer.commit(message=msg, asynchronous=False)
+                errors += 1
                 _stats.record(len(msg.value()), latency_ms)
                 continue
 
