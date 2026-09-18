@@ -16,7 +16,7 @@ export const fetchHealth = async (): Promise<HealthResponse> => {
       isolation_forest_loaded: true,
       kafka: {
         status: "ok",
-        bootstrap: "localhost:9092"
+        bootstrap: "localhost:29092"
       },
       elasticsearch: {
         status: "ok",
