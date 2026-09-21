@@ -12,3 +12,9 @@
 2026-09-18T04:13:35.355850+00:00 | serialisation_error=cannot serialize | row=<test_producer.test_serialise_invalid_object.<locals>.BadObject object at 0x7fd9cc9b9d30>
 2026-09-18T04:48:06.831088+00:00 | serialisation_error=cannot serialize | row=<test_consumer.test_serialise_invalid_object.<locals>.BadObject object at 0x7fd778762f90>
 2026-09-18T04:48:07.442697+00:00 | serialisation_error=cannot serialize | row=<test_producer.test_serialise_invalid_object.<locals>.BadObject object at 0x7fd7786cdd30>
+2026-09-18T09:10:41.281269+00:00 | serialisation_error=cannot serialize | row=<test_consumer.test_serialise_invalid_object.<locals>.BadObject object at 0x7fb35f456f90>
+2026-09-18T09:10:41.992915+00:00 | serialisation_error=cannot serialize | row=<test_producer.test_serialise_invalid_object.<locals>.BadObject object at 0x7fb35f3c5d30>
+2026-09-18T10:09:14.189449+00:00 | serialisation_error=cannot serialize | row=<test_consumer.test_serialise_invalid_object.<locals>.BadObject object at 0x7f16cdd56f90>
+2026-09-18T10:09:14.790803+00:00 | serialisation_error=cannot serialize | row=<test_producer.test_serialise_invalid_object.<locals>.BadObject object at 0x7f16cdcc1d30>
+2026-09-21T10:52:16.825034+00:00 | serialisation_error=cannot serialize | row=<test_consumer.test_serialise_invalid_object.<locals>.BadObject object at 0x7f6ec27aeba0>
+2026-09-21T10:52:17.496342+00:00 | serialisation_error=cannot serialize | row=<test_producer.test_serialise_invalid_object.<locals>.BadObject object at 0x7f6ec270ec60>

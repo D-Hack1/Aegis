@@ -168,6 +168,26 @@ async def lifespan(app: FastAPI):
         logger.critical("Cannot connect to Elasticsearch at %s:%d — %s", ES_HOST, ES_PORT, e)
         raise RuntimeError(f"Elasticsearch unreachable: {e}")
 
+    # --- Ensure the alerts index exists with the explicit mapping ---
+    # The ES container has no persistent volume, so the index vanishes when
+    # it's recreated; a write arriving first would auto-create it with
+    # text-typed fields and break /stats and /kill-chains aggregations.
+    from es.init_index import ALERTS_MAPPING, mapping_is_correct
+    try:
+        if await state.es.indices.exists(index=ES_INDEX):
+            existing = await state.es.indices.get_mapping(index=ES_INDEX)
+            props = existing[ES_INDEX]["mappings"].get("properties", {})
+            if not mapping_is_correct(props):
+                logger.warning("Index '%s' has a wrong auto-generated mapping — recreating it", ES_INDEX)
+                await state.es.indices.delete(index=ES_INDEX)
+                await state.es.indices.create(index=ES_INDEX, mappings=ALERTS_MAPPING)
+        else:
+            await state.es.indices.create(index=ES_INDEX, mappings=ALERTS_MAPPING)
+            logger.info("Created index '%s' with explicit mapping", ES_INDEX)
+    except Exception as e:
+        logger.critical("Could not ensure Elasticsearch index '%s': %s", ES_INDEX, e)
+        raise RuntimeError(f"Elasticsearch index setup failed: {e}")
+
     # --- Start correlator background task ---
     correlator_task = asyncio.create_task(_correlator_loop())
     logger.info("Correlator background task started")

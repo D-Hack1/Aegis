@@ -15,6 +15,14 @@
 #          /usr/local/zeek/share/zeek/site/main.zeek \
 #          Log::default_logdir=/zeek/logs
 #
+#   Don't add -D (deterministic seeds) here — it doesn't key UIDs off
+#   actual packet content, it resets Zeek's UID counter to the same
+#   starting state every run, so two DIFFERENT captures with the same
+#   flow count get assigned the SAME UIDs. If something downstream dedups
+#   by flow_id/uid, that makes it silently swallow a genuinely new
+#   capture's alerts instead of only catching real duplicates. Give every
+#   replay its own, never-reprocessed pcap file instead (see run_attack.sh).
+#
 # Logs written to /zeek/logs (volume-mounted to ./zeek/logs on the host).
 # The feature pipeline reads from ./zeek/logs:
 #   python3 features/pipeline.py --zeek-dir zeek/logs --scenario-name <name>

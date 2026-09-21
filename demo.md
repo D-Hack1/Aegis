@@ -87,7 +87,7 @@ on it during the actual demo.
                      # zookeeper, elasticsearch, kafka-init are all Up
    ```
 
-3. **Create the Elasticsearch index** (safe to re-run; no-ops if it exists):
+3. **Create the Elasticsearch index** (safe to re-run; no-ops if it already has the right mapping, and recreates it if it was auto-created with the wrong one):
    ```bash
    python3 es/init_index.py
    ```
@@ -131,14 +131,27 @@ on it during the actual demo.
    starts from a clean slate and old alerts don't confuse the audience.
    Zeek writes `zeek/logs/*.log` as root inside the container, so a plain
    host-side `rm` fails with `Permission denied` — delete them via
-   `docker exec` instead:
+   `docker exec` instead. **Also stop the Kafka consumer first and reset
+   its offset** — verified 2026-09-18: deleting Elasticsearch alerts
+   does *not* touch the Kafka topic itself, so any not-yet-consumed
+   backlog from earlier rehearsals sits in `raw-features` and silently
+   replays as "new" alerts the instant you start the consumer again,
+   making it look like duplication/corruption came back when it's really
+   just old messages catching up:
    ```bash
+   # make sure terminal 4 (kafka.consumer) is stopped before this
    docker exec zeek sh -c 'rm -f /zeek/logs/*.log'
    rm -f data/features/live_*.parquet
+   docker exec victim sh -c 'rm -f /pcaps/capture*.pcap /pcaps/attack_*.pcap'
    curl -s -X POST "http://localhost:9200/alerts/_delete_by_query" \
      -H 'Content-Type: application/json' \
      -d '{"query": {"match_all": {}}}' | head -c 200
+   docker exec kafka kafka-consumer-groups --bootstrap-server localhost:9092 \
+     --group aegis-consumer --topic raw-features \
+     --reset-offsets --to-latest --execute
    ```
+   (`./start_demo.sh --clean` does all of this for you, including the
+   Kafka reset.)
 
 ---
 
@@ -154,13 +167,41 @@ make up
 make status        # everything should say "Up"
 ```
 
-### Terminal 2 — tcpdump on the victim (captures each attack as it happens)
+### Terminal 2 — tcpdump on the victim (restart fresh before every act)
 ```bash
-docker exec -it victim tcpdump -i eth0 -U -w /pcaps/capture.pcap
+docker exec -it victim tcpdump -i eth0 -U -w /pcaps/capture_01.pcap
 ```
-`-U` flushes to disk after every packet, so the file is always complete —
-no need to stop cleanly for the data to be usable. This blocks in the
-foreground; leave it running through the whole attack section below.
+`-U` flushes to disk after every packet, so the file is always complete
+the moment the attack script finishes — no need to stop cleanly for the
+data to be usable. This blocks in the foreground.
+
+**Important — verified 2026-09-18: use a fresh `-w` filename before
+every single act, don't let one file accumulate across attacks.** By
+default, Zeek assigns each flow a UID from a random seed, and that seed
+is freshly randomized on every separate `zeek -C -r` invocation — so
+reprocessing the identical pcap twice gives two completely different
+sets of UIDs for the same flows. If you let `capture.pcap` accumulate
+and reprocess the whole thing each time, every old flow gets a
+brand-new random `flow_id` on every run and sails straight past the
+watcher's dedup — so every act silently re-floods the whole pipeline
+with every previous act's traffic relabeled as "new". Symptoms: alert
+counts balloon into the thousands, and each new act takes longer and
+longer to actually show up (a growing duplicate backlog ahead of it in
+Kafka). Before each act: Ctrl+C this terminal, bump the filename
+(`capture_02.pcap`, `capture_03.pcap`, ...), and restart it. (This is
+exactly what `./run_attack.sh` automates for you — see the fast path
+note above.)
+
+**Don't try to "fix" this with Zeek's `-D` flag instead** (deterministic
+seeds) — that was tried and reverted. `-D` doesn't key UIDs off the
+actual packet content, it just resets Zeek's UID counter to the same
+starting state every run, so two genuinely *different* attacks with the
+same flow count (e.g. two separate `syn_flood` runs) get assigned the
+exact same UIDs despite completely different traffic — which makes the
+watcher's dedup silently swallow the second attack's real alerts instead
+of only catching true duplicates. A fresh pcap per act, never
+reprocessed, is the only fix that's actually correct here.
+
 (Why tcpdump instead of Zeek listening live: see the note at the top of
 this file — Zeek's own container isn't in-path on the Docker bridge, so
 it never sees attacker↔victim traffic directly.)
@@ -221,46 +262,53 @@ docker exec -it attacker bash
 cd /scripts
 ```
 
-**The pattern for every act below is the same two steps:**
-1. Run the attack script (it sends real packets from the attacker
-   container — Terminal 2's `tcpdump` is capturing them as they go).
-2. Feed the capture through Zeek, writing straight into the directory
-   Terminal 3 is already watching — this is what actually makes the
-   alert appear, since Zeek can't see the traffic on its own:
+**The pattern for every act below is three steps:**
+1. In Terminal 2: Ctrl+C the current `tcpdump`, restart it with a new
+   `-w` filename (e.g. `capture_02.pcap` for the second act). This is
+   not optional — see the note above.
+2. Run the attack script (it sends real packets from the attacker
+   container — Terminal 2's freshly-restarted `tcpdump` is capturing
+   them as they go).
+3. Feed *that act's* capture through Zeek, writing straight into the
+   directory Terminal 3 is already watching — this is what actually
+   makes the alert appear, since Zeek can't see the traffic on its own:
    ```bash
-   docker exec zeek zeek -C -r /pcaps/capture.pcap /zeek/site/main.zeek Log::default_logdir=/zeek/logs
+   docker exec zeek zeek -C -r /pcaps/capture_02.pcap /zeek/site/main.zeek Log::default_logdir=/zeek/logs
    ```
-   (Run this from your host terminal, not inside the attacker container.)
-
-You don't need to stop/restart tcpdump between acts — `capture.pcap`
-just accumulates, and each `zeek -C -r` re-processes the whole file. If
-you'd rather not re-process earlier flows, Ctrl+C Terminal 2 and restart
-`tcpdump` with a new `-w` filename before each act.
+   (Run this from your host terminal, not inside the attacker container
+   — and use the same filename you gave `tcpdump` in step 1.)
 
 ### Recommended opening act — port scan (fast, ~1 second, unmistakable)
 ```bash
 python3 port_scan.py --profile fast_sequential
 ```
 Scans ports 1–1024 on the victim in about a second. Then, from your host
-terminal, run the `zeek -C -r` command above. Within a few seconds you
-should see a `port_scan` alert land in the **Live Feed**
-(http://localhost:5173), and the Kafka consumer terminal will print the
-matching `threat_class=port_scan` line.
+terminal, run the `zeek -C -r` command above (against this act's capture
+file). Within a few seconds you should see a `port_scan` alert land in
+the **Live Feed** (http://localhost:5173), and the Kafka consumer
+terminal will print the matching `threat_class=port_scan` line.
 
 ### Second act — SYN flood (visible on the Metrics page)
+Restart Terminal 2's `tcpdump` with a new filename first
+(`capture_02.pcap`), then:
 ```bash
 python3 syn_flood.py --profile low_steady
 ```
-Sends for ~20 seconds at 50 packets/sec. Then run the `zeek -C -r`
-command. Switch to the **Metrics** tab before that finishes processing —
-`FLOWS/SEC` and `PIPELINE LATENCY` will visibly spike, and a `ddos` alert
-should appear in the Live Feed.
+Sends for ~20 seconds at 50 packets/sec. Then run `zeek -C -r` against
+`capture_02.pcap`. Switch to the **Metrics** tab before that finishes
+processing — `FLOWS/SEC` and `PIPELINE LATENCY` will visibly spike, and
+a `ddos` alert should appear in the Live Feed.
 
 ### Optional third act — exfiltration (shows the Kill Chains page)
+Restart Terminal 2's `tcpdump` with a new filename again
+(`capture_03.pcap`), then:
 ```bash
 python3 exfiltration.py --flows 5 --send-live --output /pcaps/exfiltration_candidate.pcap
 ```
-Then run the `zeek -C -r` command. **Use `exfiltration.py` here, not
+(That `--output` is the script's own offline archival copy, unrelated to
+Terminal 2's capture — it's a different filename, so it's fine.) Then
+run `zeek -C -r` against `capture_03.pcap`. **Use `exfiltration.py`
+here, not
 `c2_beacon.py`** — `c2_beacon.py` (and `dga.py`/`dns_tunnel.py`) are
 synthetic *dataset generators* only: they write a PCAP but never
 transmit, and `c2_beacon.py` also hardcodes an unrelated source IP
@@ -271,15 +319,18 @@ missing the same live-send step; it's been fixed to send with
 pairs correctly with the port scan.
 
 `--flows 5` takes about 30–60s to send (it's a mix of burst profiles);
-watch for it to finish before running `zeek -C -r`. Since port_scan
-(`port_scan`) and this (`exfiltration`) are two distinct non-benign
-threat classes both from `10.10.0.2` within the 10-minute lookback
-window, they should get correlated into a single kill chain
-(`GET /kill-chains`) within ~30s (the correlator's poll interval).
+watch for it to finish before running `zeek -C -r` against
+`capture_03.pcap`. Since port_scan (`port_scan`) and this
+(`exfiltration`) are two distinct non-benign threat classes both from
+`10.10.0.2` within the 10-minute lookback window, they should get
+correlated into a single kill chain (`GET /kill-chains`) within ~30s
+(the correlator's poll interval).
 
 ### If you want a "before" baseline shown first
+Restart Terminal 2's `tcpdump` with a new filename first
+(`capture_00.pcap` — this one's meant to run *before* the attacks), then
+from the benign container, in its own terminal:
 ```bash
-# from the benign container, in its own terminal:
 docker exec -it benign bash
 cd /scripts
 python3 benign_traffic.py --flows 50 --send-live
@@ -291,10 +342,9 @@ hang with `WARNING: MAC address to reach destination not found` — see
 the troubleshooting table if you still see that). With it, this
 generates ordinary-looking traffic the audience can watch in a quiet
 Live Feed before you kick off the attack scripts — good narrative
-contrast. Same capture-then-process step as the attacks: run the
-`zeek -C -r` command
-(Terminal 2's tcpdump is capturing this too) to see it land as `benign`
-entries.
+contrast. Same capture-then-process step as the attacks: run `zeek -C -r`
+against `capture_00.pcap` to see it land as `benign` entries. Then
+restart Terminal 2 with `capture_01.pcap` before the port scan act.
 
 ---
 
@@ -321,19 +371,23 @@ entries.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Status bar says `OFFLINE` | FastAPI (terminal 5) isn't up, or ES/Kafka aren't reachable | Check terminal 5's log for the startup error; confirm `make status` shows all containers `Up` |
-| No alerts ever appear, but consumer terminal is quiet too | You forgot the `zeek -C -r ...` processing step after the attack, or `tcpdump` wasn't actually running/capturing in Terminal 2 | Confirm Terminal 2's `tcpdump` is running and its pcap file is growing (`docker exec victim ls -la /pcaps/capture.pcap`); then run the `zeek -C -r` command from section 2 |
+| No alerts ever appear, but consumer terminal is quiet too | You forgot the `zeek -C -r ...` processing step after the attack, or `tcpdump` wasn't actually running/capturing in Terminal 2 | Confirm Terminal 2's `tcpdump` is running and its pcap file for this act is growing (`docker exec victim ls -la /pcaps/capture_NN.pcap`); then run `zeek -C -r` against that same file |
+| Alert counts balloon into the thousands, and each new act takes longer and longer to show up | Reused the same `capture.pcap` across multiple acts instead of restarting `tcpdump` with a fresh filename each time — Zeek's non-deterministic UIDs mean every old flow gets re-emitted as "new" on every reprocess (see the note in section 1, Terminal 2) | `./run_attack.sh` already does this correctly (fresh file per attack). Doing it manually: always Ctrl+C Terminal 2 and restart with a new `-w` filename before each act — never reprocess an old capture file that's already produced alerts |
+| Alert counts keep climbing on their own for a while after an attack, or old-looking alerts reappear after you've already cleared Elasticsearch | Stale, not-yet-consumed backlog sitting in the Kafka `raw-features` topic from earlier rehearsals/testing — deleting ES alerts doesn't touch Kafka, so the backlog replays the moment the consumer runs (verified 2026-09-18; can take 30–90s+ to drain since each message needs a real `/infer` call at ~50–100ms) | Reset the consumer group's offset before the demo (see step 0.8) — `./start_demo.sh --clean` does this automatically. If it's mid-drain, just wait; check `docker exec kafka kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group aegis-consumer` for `LAG` |
+| Dashboard behaves erratically / alerts seem duplicated in a way nothing here explains | You may have run `./start_demo.sh` twice without `./stop_demo.sh` in between, leaving two `kafka.consumer` (or two of anything) fighting over the same consumer group | Fixed 2026-09-18 — `start_demo.sh` now stops any leftover services from a previous run before starting new ones. If you're on an older copy, check `ps aux \| grep -E "run_pipeline\|kafka.consumer\|uvicorn\|vite"` for duplicates and kill the extras |
 | `docker exec zeek ip -brief addr` fails with `exec: "ip": not found` | The zeek image doesn't ship `iproute2` | Use `docker exec zeek cat /proc/net/dev` or `docker exec zeek ls /sys/class/net` instead to confirm the interface name is `eth0` |
 | Consumer prints `Cannot reach FastAPI` | Terminal 5 crashed or isn't started yet | Restart `uvicorn api.main:app --port 8000` |
 | `ModuleNotFoundError: confluent_kafka` (or similar) | Dependencies not installed, or `kafka-python` is still shadowing the local `kafka/` package | `pip uninstall -y kafka-python && pip install -r requirements.txt` |
 | FastAPI fails at startup with `Model file missing: ../ml/model.joblib` | Fixed 2026-09-17 — `api/main.py` used a path relative to cwd instead of the repo root | Should no longer happen; if it does, confirm you're on the current `api/main.py` and re-run `pip install -r requirements.txt` |
 | FastAPI fails at startup with `ValueError: You must have 'aiohttp' installed` | `aiohttp` is required by the async Elasticsearch client but wasn't in `requirements.txt` | Fixed — now pinned in `requirements.txt`. If you hit this, `pip install -r requirements.txt` again |
 | Metrics page (SSE) logs `SSE stream error: UnsupportedCodecError: Libraries for lz4 compression codec not found` | `aiokafka` needs `cramjam` to decompress the lz4-compressed metrics topic (installing the `lz4` PyPI package does **not** fix this — aiokafka 0.11 uses `cramjam`) | Fixed — `cramjam` is now pinned in `requirements.txt`. If you hit this, `pip install -r requirements.txt` again and restart the API |
-| Stats/Kill Chains pages return `{"detail": "... query failed"}` with an ES `Fielddata is disabled` error | The `alerts` index was created before `es/init_index.py`'s explicit mapping ran (e.g. a stray alert got written first and Elasticsearch auto-created it with the wrong field types) — re-running `init_index.py` is a no-op once the index exists, so it will **not** self-heal | Stop anything writing to ES (Terminals 4 and 5), then `curl -X DELETE localhost:9200/alerts`, then `python3 es/init_index.py` again, then restart terminals 4–5. Doing the normal step-0.3-before-step-1 order avoids this entirely |
+| Dashboard Stats / Kill Chains pages show "Connection Error — Unable to reach API" (the API returns HTTP 500 with an ES `Fielddata is disabled on [threat_class]` error in `logs/run/api.log`) | The `alerts` index was auto-created by Elasticsearch with text-typed fields (the ES container has no persistent volume, so the index disappears when the container is recreated, and a write that arrives first recreates it with the wrong mapping) | Fixed 2026-09-21 — the API now checks the mapping at startup and recreates the index if it's wrong, and `es/init_index.py` does the same. Just restart the API (or run `python3 es/init_index.py`); existing alerts in a wrong-mapped index are dropped |
 | Everything alerts `unknown_anomaly` at low severity | Isolation Forest / model files missing or stale | Confirm `ml/model.joblib`, `ml/iso_forest.joblib`, `ml/label_encoder.joblib`, `ml/encoders.joblib` all exist |
 | Dashboard shows nothing and never errors either | Browser hit `localhost:5173` but Vite proxy target (`localhost:8000`) isn't up | Same as the FastAPI row above |
 | Old alerts from a previous test run are cluttering the feed | Didn't clear Elasticsearch / `zeek/logs` beforehand | Re-run the cleanup commands in step 0.8 |
 | `syn_flood.py`/`udp_flood.py`/`exfiltration.py --send-live` raise `PermissionError` or send nothing | Missing `NET_RAW`/`NET_ADMIN` capability, or `scapy` can't resolve a route to the target | Confirm you're running inside the `attacker` container (`docker exec -it attacker bash`), not on the host |
 | `docker logs kafka` shows `NodeExistsException` and the container keeps exiting right after `make up` | ZooKeeper still holds the previous session's ephemeral broker registration — happens after an unclean shutdown (machine reboot/sleep) | Wait ~15–20s, then `docker compose up -d kafka` once more — it comes up clean once ZooKeeper's old session times out |
+| First attack works, then every attack after it produces nothing new (or shows the same stale `c2_beaconing`/`10.0.0.10` alerts repeating) | Something wrote to the shared capture file with `wrpcap` (e.g. a dataset-only script's `--output` pointed at the same `/pcaps/*.pcap` tcpdump had open), truncating it out from under tcpdump and corrupting it — every `zeek -C -r` since has been re-reading that broken snapshot | `./run_attack.sh` refuses any `--output` under `/pcaps/` now (see its guard), but to recover manually: kill tcpdump on the victim, restart it with a brand-new `-w` filename, then run a real attack again. **Never point any attack script's `--output` at the file tcpdump is currently writing to** |
 | `benign_traffic.py --send-live` prints `WARNING: MAC address to reach destination not found. Using broadcast.` and seems to hang | Fixed 2026-09-18 — half its packets simulate the victim's *replies* by addressing them to the benign container's own IP; scapy can't ARP-resolve a destination that's your own address and retries/times out per packet. It now only transmits the genuine outbound half live | Should no longer happen (`--flows 50` now takes ~60–90s, not indefinitely); if you still see it, confirm you're on the current `benign/scripts/benign_traffic.py` |
 
 ---

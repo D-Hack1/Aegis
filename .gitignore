@@ -70,3 +70,4 @@ cookbook/
 
 *.zip
 *.joblib
+*.log

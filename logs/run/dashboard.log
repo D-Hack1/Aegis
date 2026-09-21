@@ -2,8 +2,9 @@
 > dashboard@0.0.0 dev
 > vite
 
+4:16:57 PM [vite] (client) Re-optimizing dependencies because vite config has changed
 
-  VITE v8.2.2  ready in 279 ms
+  VITE v8.2.2  ready in 239 ms
 
   ➜  Local:   http://localhost:5173/
   ➜  Network: use --host to expose

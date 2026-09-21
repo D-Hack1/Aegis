@@ -9,7 +9,11 @@
 # accidentally run against a different Python (see demo.md section 0).
 #
 # Logs go to ./logs/run/*.log. PIDs go to ./logs/run/pids so stop_demo.sh
-# can clean up. Safe to re-run: it skips containers/services already up.
+# can clean up. Safe to re-run without calling stop_demo.sh first — it
+# stops any pipeline/consumer/API/dashboard processes from a previous
+# run before starting fresh ones (running this twice without that used
+# to silently spawn a SECOND kafka.consumer fighting over the same
+# consumer group, causing confusing duplicate/missing alert symptoms).
 #
 # Usage:
 #   ./start_demo.sh          # start everything
@@ -51,6 +55,20 @@ if ! docker info >/dev/null 2>&1; then
     exit 1
 fi
 ok "Docker is up"
+
+# ---------------------------------------------------------------------------
+# Stop any leftover services from a previous run (idempotent re-run —
+# see the header comment for why this matters).
+# ---------------------------------------------------------------------------
+if pgrep -f "run_pipeline.py|kafka\.consumer|uvicorn api.main|dashboard/node_modules/.bin/vite" >/dev/null 2>&1; then
+    step "Stopping leftover services from a previous run"
+    pkill -f "run_pipeline.py" 2>/dev/null
+    pkill -f "kafka\.consumer" 2>/dev/null
+    pkill -f "uvicorn api.main" 2>/dev/null
+    pkill -f "dashboard/node_modules/.bin/vite" 2>/dev/null
+    sleep 2
+    ok "Stopped"
+fi
 
 # ---------------------------------------------------------------------------
 # 1. Docker lab
@@ -113,23 +131,34 @@ fi
 "$VENV_PY" es/init_index.py
 
 # ---------------------------------------------------------------------------
-# 4. Optional cleanup — stale zeek logs / features / ES alerts
+# 4. Optional cleanup — stale zeek logs / features / ES alerts / Kafka backlog
 # ---------------------------------------------------------------------------
 if [[ "$CLEAN" == true ]]; then
     step "Cleaning stale state (--clean)"
     docker exec zeek sh -c 'rm -f /zeek/logs/*.log' 2>/dev/null
+    docker exec victim sh -c 'rm -f /pcaps/capture*.pcap /pcaps/attack_*.pcap' 2>/dev/null
     rm -f data/features/live_*.parquet
     curl -s -X POST "http://localhost:9200/alerts/_delete_by_query" \
         -H 'Content-Type: application/json' \
         -d '{"query": {"match_all": {}}}' >/dev/null
-    ok "Cleared zeek/logs, data/features/live_*.parquet, and ES alerts"
+    # Deleting ES alerts doesn't touch the Kafka topic itself — any
+    # not-yet-consumed backlog from earlier rehearsals/testing sits in
+    # raw-features and will get replayed the moment the consumer starts,
+    # silently re-appearing as "new" alerts. Skip straight to the tail
+    # (the consumer is confirmed stopped above, so this is safe).
+    docker exec kafka kafka-consumer-groups --bootstrap-server localhost:9092 \
+        --group aegis-consumer --topic raw-features \
+        --reset-offsets --to-latest --execute >/dev/null 2>&1
+    ok "Cleared zeek/logs, old attack pcaps, data/features/live_*.parquet, ES alerts, and Kafka backlog"
 fi
 
 # ---------------------------------------------------------------------------
-# 5. tcpdump on the victim (Zeek can't see traffic live on this network —
-#    see demo.md's top note). Kill any stray instance first.
+# 5. Capture is handled per-attack by run_attack.sh (a fresh pcap file
+#    each time — see its header comment for why a single shared,
+#    accumulating capture file causes duplicate/stale alerts). Just make
+#    sure nothing stale is left running from a previous session.
 # ---------------------------------------------------------------------------
-step "Starting tcpdump on victim"
+step "Clearing any stray tcpdump on victim"
 docker exec victim python3 -c "
 import os, signal
 for p in os.listdir('/proc'):
@@ -141,10 +170,7 @@ for p in os.listdir('/proc'):
         except Exception:
             pass
 " 2>/dev/null
-docker exec -d victim tcpdump -i eth0 -U -w /pcaps/capture.pcap
-sleep 1
-ok "tcpdump capturing to /pcaps/capture.pcap inside the victim container"
-warn "Run ./run_attack.sh <script> [args...] to fire an attack and feed it through Zeek"
+ok "Ready — run ./run_attack.sh <script> [args...] to fire an attack and feed it through Zeek"
 
 # ---------------------------------------------------------------------------
 # 6. Watcher/producer, Kafka consumer, FastAPI — all via .venv
