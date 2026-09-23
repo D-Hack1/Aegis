@@ -33,7 +33,8 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, Literal
+import subprocess
 
 from dotenv import load_dotenv
 
@@ -857,6 +858,138 @@ async def health():
         "elasticsearch":          es_status,
     }
 
+# ---------------------------------------------------------------------------
+# Demo attack — valid live-fire types mapped to run_attack.sh invocations
+# ---------------------------------------------------------------------------
+#
+# run_attack.sh handles the full capture → Zeek → pipeline dance:
+#   1. kills any leftover tcpdump on victim
+#   2. starts a fresh per-attack pcap on victim (e.g. /pcaps/attack_<ts>.pcap)
+#   3. runs the attack script inside attacker (or benign) container
+#   4. waits for tcpdump to flush
+#   5. feeds the pcap through Zeek offline → logs → Kafka → /infer → ES
+#
+# c2_beacon, dga, and dns_tunnel are OFFLINE dataset generators — run_attack.sh
+# refuses them with exit 1.  They produce no real traffic and therefore no
+# alert.  They are intentionally absent from the whitelist below.
+#
+# run_attack.sh is expected to live at <REPO_ROOT>/run_attack.sh.
+# Override with env var DEMO_ATTACK_SCRIPT if your layout differs.
+
+RUN_ATTACK_SH = os.getenv(
+    "DEMO_ATTACK_SCRIPT",
+    str(REPO_ROOT / "run_attack.sh"),
+)
+
+# Each entry: attack_type → argv passed to run_attack.sh (after the script name)
+# run_attack.sh signature:  ./run_attack.sh <script.py> [extra args...]
+_ATTACK_COMMANDS: dict[str, list[str]] = {
+    "port_scan":    ["port_scan.py",    "--profile", "fast_sequential"],
+    "syn_flood":    ["syn_flood.py",    "--profile", "low_steady"],
+    "udp_flood":    ["udp_flood.py",    "--profile", "low_steady"],
+    "exfiltration": ["exfiltration.py", "--flows",   "5", "--send-live"],
+    "benign":       ["benign_traffic.py", "--flows", "50", "--send-live"],
+}
+
+AttackType = Literal["port_scan", "syn_flood", "udp_flood", "exfiltration", "benign"]
+
+
+# ---------------------------------------------------------------------------
+# POST /demo/attack
+# ---------------------------------------------------------------------------
+@app.post("/demo/attack")
+async def demo_attack(
+    type: AttackType = Query(..., description="Attack scenario to launch"),
+):
+    """
+    Launch a live-fire attack scenario through run_attack.sh.
+
+    Flow (handled entirely by run_attack.sh):
+      attacker container → fresh pcap on victim → Zeek offline → Kafka → /infer → ES
+
+    The process is started in the background — this endpoint returns
+    immediately while the attack runs to completion on its own.
+    Alerts appear on the dashboard within a few seconds of the script
+    finishing (Zeek processing + pipeline lag).
+
+    Note: c2_beacon, dns_tunnel, and dga are NOT available here — those
+    scripts are offline dataset generators that produce no real traffic
+    and are refused by run_attack.sh itself.
+    """
+    if not Path(RUN_ATTACK_SH).exists():
+        logger.error("run_attack.sh not found at %s", RUN_ATTACK_SH)
+        raise HTTPException(
+            status_code=503,
+            detail=f"run_attack.sh not found at {RUN_ATTACK_SH} — check DEMO_ATTACK_SCRIPT env var",
+        )
+
+    script_args = _ATTACK_COMMANDS[type]   # KeyError impossible — Literal enforced by FastAPI
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "bash", RUN_ATTACK_SH, *script_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,   # merge stderr into stdout so logs are ordered
+            cwd=str(REPO_ROOT),
+        )
+        logger.info(
+            "Demo attack launched — type=%s  pid=%s  argv=[bash %s %s]",
+            type, proc.pid, RUN_ATTACK_SH, " ".join(script_args),
+        )
+    except FileNotFoundError:
+        logger.error("bash not found — cannot launch run_attack.sh")
+        raise HTTPException(status_code=503, detail="bash not found in PATH")
+    except Exception as e:
+        logger.error("Failed to launch demo attack type=%s: %s", type, e)
+        raise HTTPException(status_code=500, detail=f"Failed to launch attack: {e}")
+
+    # Fire-and-forget: log output in background without blocking the response.
+    # run_attack.sh is synchronous (blocks until Zeek finishes), so we must
+    # not await it here — the whole point is that /demo/attack returns fast.
+    async def _drain_and_log():
+        stdout, _ = await proc.communicate()
+        exit_code  = proc.returncode
+        output     = stdout.decode(errors="replace").strip() if stdout else ""
+        if exit_code == 0:
+            logger.info("Demo attack finished — type=%s\n%s", type, output)
+        else:
+            logger.error(
+                "Demo attack FAILED — type=%s  exit=%d\n%s",
+                type, exit_code, output,
+            )
+
+    asyncio.create_task(_drain_and_log())
+
+    return {"status": "launched", "attack": type}
+
+
+# ---------------------------------------------------------------------------
+# GET /demo/reset
+# ---------------------------------------------------------------------------
+@app.get("/demo/reset")
+async def demo_reset():
+    """
+    Delete every alert document from Elasticsearch while keeping the index
+    and its mapping intact.  Use between judge demos for a clean slate.
+    refresh=True makes the deletion immediately visible to /alerts and /stats.
+    """
+    try:
+        resp = await state.es.delete_by_query(
+            index=ES_INDEX,
+            body={"query": {"match_all": {}}},
+            refresh=True,
+            wait_for_completion=True,
+        )
+    except Exception as e:
+        logger.error("demo/reset — ES delete_by_query failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
+
+    deleted = resp.get("deleted", 0)
+    logger.info(
+        "Demo reset — deleted %d alert document(s) from index '%s'",
+        deleted, ES_INDEX,
+    )
+    return {"status": "reset", "deleted": deleted}
 
 # ---------------------------------------------------------------------------
 # Correlator background loop (imported here to avoid circular imports)
