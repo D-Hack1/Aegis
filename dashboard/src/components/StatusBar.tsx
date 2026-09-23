@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { fetchHealth } from '../api/health';
 import { HealthResponse } from '../api/types';
+import { ThemeSwitch } from './ThemeSwitch';
 
 const StatusDot: React.FC<{ status?: string }> = ({ status }) => {
   const color =
@@ -98,13 +99,14 @@ export const StatusBar: React.FC = () => {
         )}
       </div>
 
-      {/* Right: uptime */}
+      {/* Right: uptime & theme switch */}
       <div className="flex items-center gap-4">
         <div style={{ fontSize: '11.5px', color: 'var(--color-text-muted)', fontFamily: '"JetBrains Mono", monospace' }}>
           {health?.uptime_seconds != null
             ? `Up ${Math.floor(health.uptime_seconds / 3600)}h ${Math.floor((health.uptime_seconds % 3600) / 60)}m`
             : 'Connecting...'}
         </div>
+        <ThemeSwitch />
       </div>
     </div>
   );

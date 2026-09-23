@@ -7,6 +7,7 @@ import { ThreatClassBadge } from '../components/ThreatClassBadge';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorState } from '../components/ErrorState';
 import { AlertSidePanel } from '../components/AlertSidePanel';
+import { DemoControl } from '../components/DemoControl';
 import { Search, Filter, Shield, Clock } from 'lucide-react';
 
 // Helper to format relative time
@@ -27,14 +28,18 @@ const getRelativeTime = (date: Date) => {
 export const LiveFeed: React.FC = () => {
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [evidenceSearch, setEvidenceSearch] = useState<string>('');
+  const [severityFilter, setSeverityFilter] = useState<string>('');
+  const [threatClassFilter, setThreatClassFilter] = useState<string>('');
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['alerts', 'live', evidenceSearch],
+    queryKey: ['alerts', 'live', evidenceSearch, severityFilter, threatClassFilter],
     queryFn: () =>
       fetchAlerts({
         page: 1,
         page_size: 50,
         ...(evidenceSearch ? { evidence: evidenceSearch } : {}),
+        ...(severityFilter ? { severity: severityFilter } : {}),
+        ...(threatClassFilter ? { threat_class: threatClassFilter } : {}),
       }),
     refetchInterval: 5000,
   });
@@ -63,11 +68,38 @@ export const LiveFeed: React.FC = () => {
               className="input pl-9 w-64"
             />
           </div>
-          <button className="btn btn-ghost">
-            <Filter size={15} />
-            Filters
-          </button>
+          <select 
+            className="input w-36 text-sm" 
+            value={severityFilter} 
+            onChange={e => setSeverityFilter(e.target.value)}
+            style={{ backgroundColor: 'var(--color-surface)', height: '36px' }}
+          >
+            <option value="">All Severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="info">Info</option>
+          </select>
+
+          <select 
+            className="input w-44 text-sm" 
+            value={threatClassFilter} 
+            onChange={e => setThreatClassFilter(e.target.value)}
+            style={{ backgroundColor: 'var(--color-surface)', height: '36px' }}
+          >
+            <option value="">All Threats</option>
+            <option value="denial_of_service">Denial of Service</option>
+            <option value="reconnaissance">Reconnaissance</option>
+            <option value="exfiltration">Exfiltration</option>
+            <option value="lateral_movement">Lateral Movement</option>
+            <option value="malware">Malware</option>
+          </select>
         </div>
+      </div>
+
+      <div className="mb-6 flex-shrink-0">
+        <DemoControl onReset={() => refetch()} />
       </div>
 
       <div className="overflow-auto rounded-lg panel flex flex-col flex-1 min-h-0">

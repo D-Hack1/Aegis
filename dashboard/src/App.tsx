@@ -96,10 +96,6 @@ const AppInner: React.FC = () => {
         style={{ opacity: theme === 'dark' ? 0.45 : 0.6, transition: 'opacity 0.3s ease' }}
       />
 
-      {/* Theme Switch — top right */}
-      <div style={{ position: 'fixed', top: '14px', right: '18px', zIndex: 50 }}>
-        <ThemeSwitch />
-      </div>
 
       {/* App Shell */}
       <div
