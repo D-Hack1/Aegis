@@ -22,8 +22,15 @@ const getIcon = (threat: ThreatClass, size = 14) => {
 
 export const ThreatClassBadge: React.FC<ThreatClassBadgeProps> = ({ threatClass, className = '' }) => {
   return (
-    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-800/80 border border-zinc-700 text-zinc-200 text-sm ${className}`}>
-      <span className="text-sky-500">{getIcon(threatClass)}</span>
+    <div
+      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm font-medium ${className}`}
+      style={{
+        backgroundColor: 'var(--color-surface)',
+        border: '1px solid var(--color-border)',
+        color: 'var(--color-text-primary)'
+      }}
+    >
+      <span style={{ color: 'var(--color-accent)' }}>{getIcon(threatClass)}</span>
       <span>{THREAT_CLASS_LABELS[threatClass]}</span>
     </div>
   );

@@ -28,7 +28,15 @@ export const KillChains: React.FC = () => {
   });
 
   if (isLoading && !data) {
-    return <div className="h-full flex items-center justify-center text-sky-500 animate-pulse">Analyzing multi-stage threats...</div>;
+    return (
+      <div className="h-full flex flex-col p-6 max-w-7xl mx-auto w-full gap-8">
+        <div className="flex flex-col gap-2">
+          <div className="skeleton h-10 w-64 rounded" />
+          <div className="skeleton h-6 w-96 rounded" />
+        </div>
+        {[1,2,3].map(i => <div key={i} className="skeleton h-64 rounded-xl" />)}
+      </div>
+    );
   }
 
   if (isError) {
@@ -39,14 +47,23 @@ export const KillChains: React.FC = () => {
     return <div className="p-6 h-full"><EmptyState message="No Multi-Stage Attacks" description="No correlated attack chains found in the current timeframe." /></div>;
   }
 
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'critical': return 'var(--color-critical)';
+      case 'high': return 'var(--color-high)';
+      case 'medium': return 'var(--color-medium)';
+      default: return 'var(--color-info)';
+    }
+  };
+
   return (
-    <div className="h-full flex flex-col p-6 max-w-7xl mx-auto w-full overflow-y-auto">
+    <div className="h-full flex flex-col p-6 max-w-7xl mx-auto w-full overflow-y-auto animate-fade-in">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-zinc-100 flex items-center gap-3">
-          <Link2 className="text-sky-500" size={32} />
+        <h1 className="text-2xl font-semibold flex items-center gap-2 mb-1" style={{ color: 'var(--color-text-primary)' }}>
+          <Link2 size={24} style={{ color: 'var(--color-accent)' }} />
           Kill Chain Timeline
         </h1>
-        <p className="text-zinc-400 mt-2 font-mono text-sm">
+        <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
           Correlated multi-stage attack progressions grouped by adversary IP
         </p>
       </div>
@@ -55,61 +72,70 @@ export const KillChains: React.FC = () => {
         {data.chains.map((chain: KillChain) => (
           <div 
             key={chain.chain_id} 
-            className={`panel p-6 flex flex-col gap-6 border-l-4 transition-all ${
-              highlightedId === chain.chain_id ? 'bg-zinc-800' : ''
-            }`}
+            className="panel p-6 flex flex-col gap-6 transition-all"
             style={{ 
-              borderLeftColor: chain.max_severity === 'critical' ? '#FF2A55' : 
-                               chain.max_severity === 'high' ? '#FF6B00' : 
-                               chain.max_severity === 'medium' ? '#FFC700' : '#00F0FF' 
+              borderLeft: `4px solid ${getSeverityColor(chain.max_severity)}`,
+              backgroundColor: highlightedId === chain.chain_id ? 'var(--color-surface-active)' : 'var(--color-surface)'
             }}
           >
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-6">
                 <div className="flex flex-col">
-                  <span className="text-xs font-mono text-zinc-500 mb-1">ATTACKER IP</span>
-                  <span className="font-mono text-amber-500 font-bold text-xl">{chain.src_ip}</span>
+                  <span className="text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Attacker IP</span>
+                  <span className="font-mono font-semibold text-lg" style={{ color: 'var(--color-warning)' }}>{chain.src_ip}</span>
                 </div>
-                <div className="h-8 w-px bg-zinc-700 mx-2"></div>
+                <div className="h-8 w-px" style={{ backgroundColor: 'var(--color-border)' }}></div>
                 <div className="flex flex-col">
-                  <span className="text-xs font-mono text-zinc-500 mb-1">TIME WINDOW</span>
-                  <span className="font-mono text-zinc-300 text-sm">
-                    {new Date(chain.first_seen).toLocaleTimeString()} → {new Date(chain.last_seen).toLocaleTimeString()}
+                  <span className="text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Time Window</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                    {new Date(chain.first_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} 
+                    <span style={{ color: 'var(--color-text-muted)', margin: '0 4px' }}>→</span> 
+                    {new Date(chain.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <span className="text-zinc-400 text-sm font-bold bg-zinc-950 px-3 py-1 rounded border border-zinc-800">
+                <span className="badge" style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
                   {chain.stage_count} STAGES
                 </span>
                 <SeverityBadge severity={chain.max_severity} />
               </div>
             </div>
 
-            <div className="relative pt-8 pb-4 px-4 overflow-x-auto">
-              <div className="absolute top-1/2 left-8 right-8 h-1 bg-zinc-800 -translate-y-1/2 z-0 rounded-full"></div>
+            <div className="relative pt-10 pb-4 px-4 overflow-x-auto">
+              <div 
+                className="absolute top-1/2 left-8 right-8 h-0.5 -translate-y-1/2 z-0 rounded-full opacity-50"
+                style={{ 
+                  background: `linear-gradient(90deg, var(--color-border-strong) 0%, ${getSeverityColor(chain.max_severity)} 100%)` 
+                }}
+              ></div>
               
               <div className="relative z-10 flex items-center justify-between min-w-max gap-12">
                 {chain.stages.map((stage, idx) => (
                   <React.Fragment key={stage.alert_id}>
                     {idx > 0 && (
-                      <div className="flex-1 flex justify-center text-zinc-600">
-                        <ArrowRight size={20} />
+                      <div className="flex-1 flex justify-center" style={{ color: 'var(--color-text-muted)' }}>
+                        <ArrowRight size={18} />
                       </div>
                     )}
                     <div 
                       onClick={() => setSelectedAlertId(stage.alert_id)}
-                      className={`flex flex-col items-center gap-3 cursor-pointer group bg-zinc-900 p-4 rounded-xl border-2 transition-all hover:-translate-y-1 ${
-                        stage.severity === 'critical' ? 'border-rose-500 ' :
-                        stage.severity === 'high' ? 'border-amber-500 ' :
-                        stage.severity === 'medium' ? 'border-yellow-500 ' :
-                        'border-sky-500 '
-                      }`}
+                      className="flex flex-col items-center gap-3 cursor-pointer p-4 rounded-xl transition-all hover:-translate-y-1"
+                      style={{
+                        backgroundColor: 'var(--color-bg)',
+                        border: `2px solid ${getSeverityColor(stage.severity)}`,
+                        boxShadow: `0 4px 12px rgba(0,0,0,0.1)`
+                      }}
                     >
-                      <div className="text-xs font-mono text-zinc-400">{new Date(stage.timestamp).toLocaleTimeString()}</div>
-                      <ThreatClassBadge threatClass={stage.threat_class} className="shadow-none border-none bg-zinc-950" />
-                      <div className="text-xs font-mono text-zinc-500 mt-1">
-                        TARGET: <span className="text-sky-500">{stage.dst_ip}</span>{stage.dst_port > 0 ? `:${stage.dst_port}` : ''}
+                      <div className="text-xs font-mono" style={{ color: 'var(--color-text-secondary)' }}>
+                        {new Date(stage.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </div>
+                      <ThreatClassBadge threatClass={stage.threat_class} />
+                      <div className="text-xs flex items-center gap-1 mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                        Target: 
+                        <span className="font-mono font-medium" style={{ color: 'var(--color-info)' }}>
+                          {stage.dst_ip}{stage.dst_port > 0 ? `:${stage.dst_port}` : ''}
+                        </span>
                       </div>
                     </div>
                   </React.Fragment>
